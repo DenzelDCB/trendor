@@ -304,40 +304,39 @@ function createBlockOverlay(blockedHostname) {
 
 // Block page interaction without hiding content (for background script injection)
 function blockPageInteraction() {
-  // Create a blur overlay that covers and blurs everything underneath
-  const blurOverlay = document.createElement('div');
-  blurOverlay.id = 'focus-blur-overlay';
-  
-  // Get the entire page content and clone it for blur effect
-  const pageContent = document.documentElement.cloneNode(true);
-  pageContent.id = 'blur-content';
-  pageContent.style.cssText = `
+  // Create a solid overlay that completely blocks page view
+  const pageBlocker = document.createElement('div');
+  pageBlocker.id = 'focus-page-blocker';
+  pageBlocker.style.cssText = `
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    filter: blur(5px);
-    -webkit-filter: blur(5px);
+    background: linear-gradient(135deg, #2c3e50, #34495e);
     z-index: 999996;
     pointer-events: none;
-    opacity: 0.8;
   `;
   
-  // Create container for the blurred content
-  blurOverlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 999996;
+  // Add blocked message to the overlay
+  const blockedMessage = document.createElement('div');
+  blockedMessage.style.cssText = `
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    font-size: 24px;
+    font-weight: 300;
+    text-align: center;
+    opacity: 0.3;
     pointer-events: none;
-    overflow: hidden;
   `;
+  blockedMessage.textContent = '🎯 Focus Mode Active';
+  pageBlocker.appendChild(blockedMessage);
   
-  blurOverlay.appendChild(pageContent);
-  document.body.appendChild(blurOverlay);
+  document.body.appendChild(pageBlocker);
   
   // Prevent scrolling
   document.body.style.overflow = 'hidden';
@@ -396,8 +395,8 @@ function blockPageInteraction() {
     const blocker = document.getElementById('focus-interaction-blocker');
     if (blocker) blocker.remove();
     
-    const blurOverlay = document.getElementById('focus-blur-overlay');
-    if (blurOverlay) blurOverlay.remove();
+    const pageBlocker = document.getElementById('focus-page-blocker');
+    if (pageBlocker) pageBlocker.remove();
     
     // Restore scrolling
     document.body.style.overflow = '';
