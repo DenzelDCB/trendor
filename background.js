@@ -145,8 +145,8 @@ function checkAndBlockSite(tabId, url) {
   try {
     const hostname = new URL(url).hostname;
     
-    // Allow focus site and allowed sites
-    if (isAllowedSite(hostname)) {
+    // Allow focus site and allowed sites (pass full URL for precise matching)
+    if (isAllowedSite(url)) {
       return;
     }
 
@@ -158,20 +158,40 @@ function checkAndBlockSite(tabId, url) {
 }
 
 // Check if a site is allowed
-function isAllowedSite(hostname) {
+function isAllowedSite(url) {
   if (!focusSession) return false;
   
-  // Check if it's the focus site
-  if (hostname.includes(focusSession.focusSite)) {
-    return true;
+  try {
+    const urlObj = new URL(url);
+    const fullUrl = url;
+    const hostname = urlObj.hostname;
+    
+    // Check if it's the focus site (allow exact match or partial match for hostname)
+    if (hostname.includes(focusSession.focusSite)) {
+      return true;
+    }
+    
+    // Check if it's in allowed sites (check exact URL match first, then hostname)
+    if (focusSession.allowedSites) {
+      return focusSession.allowedSites.some(allowed => {
+        // Remove any whitespace from allowed entry
+        const cleanAllowed = allowed.trim();
+        
+        // If allowed entry starts with http:// or https://, treat as exact URL match
+        if (cleanAllowed.startsWith('http://') || cleanAllowed.startsWith('https://')) {
+          return fullUrl.startsWith(cleanAllowed) || cleanAllowed.startsWith(fullUrl);
+        }
+        
+        // Otherwise, treat as hostname match (current behavior)
+        return hostname.includes(cleanAllowed);
+      });
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('Error checking allowed site:', url, error);
+    return false;
   }
-  
-  // Check if it's in allowed sites
-  if (focusSession.allowedSites) {
-    return focusSession.allowedSites.some(allowed => hostname.includes(allowed));
-  }
-  
-  return false;
 }
 
 // Block a site by injecting content script
