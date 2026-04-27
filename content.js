@@ -264,39 +264,38 @@ function createBlockOverlay(blockedHostname) {
 
 // Block page interaction without hiding content
 function blockPageInteraction() {
-  // Create a solid overlay that completely blocks page view
-  const pageBlocker = document.createElement('div');
-  pageBlocker.id = 'focus-page-blocker';
-  pageBlocker.style.cssText = `
+  // Create a simple blocking message overlay
+  const blockingMessage = document.createElement('div');
+  blockingMessage.id = 'focus-blocking-message';
+  blockingMessage.style.cssText = `
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(135deg, #2c3e50, #34495e);
-    z-index: 999996;
-    pointer-events: none;
-  `;
-  
-  // Add blocked message to the overlay
-  const blockedMessage = document.createElement('div');
-  blockedMessage.style.cssText = `
-    position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    color: white;
+    background: white;
+    color: #333;
+    padding: 30px 40px;
+    border-radius: 12px;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-    font-size: 24px;
-    font-weight: 300;
+    font-size: 18px;
+    font-weight: 500;
     text-align: center;
-    opacity: 0.3;
-    pointer-events: none;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    z-index: 999996;
+    max-width: 400px;
   `;
-  blockedMessage.textContent = '🎯 Focus Mode Active';
-  pageBlocker.appendChild(blockedMessage);
+  blockingMessage.innerHTML = `
+    <div style="margin-bottom: 15px;">
+      <div style="font-size: 32px; margin-bottom: 10px;">🚫</div>
+      <div style="font-weight: 600; color: #e74c3c; margin-bottom: 10px;">This Page is Blocked</div>
+    </div>
+    <div style="color: #666; line-height: 1.5;">
+      Please move to your focus page to continue studying.<br>
+      Your focus session is still active.
+    </div>
+  `;
   
-  document.body.appendChild(pageBlocker);
+  document.body.appendChild(blockingMessage);
   
   // Prevent scrolling
   document.body.style.overflow = 'hidden';
@@ -355,8 +354,8 @@ function blockPageInteraction() {
     const blocker = document.getElementById('focus-interaction-blocker');
     if (blocker) blocker.remove();
     
-    const pageBlocker = document.getElementById('focus-page-blocker');
-    if (pageBlocker) pageBlocker.remove();
+    const blockingMessage = document.getElementById('focus-blocking-message');
+    if (blockingMessage) blockingMessage.remove();
     
     // Restore scrolling
     document.body.style.overflow = '';
