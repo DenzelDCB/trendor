@@ -212,6 +212,9 @@ function removeOverlay() {
   // Reset blocking state
   isBlocked = false;
   lastBlockedUrl = null;
+  
+  // Restart monitoring when overlay is removed
+  setupMonitoring();
 }
 
 // Update timer display on overlay
