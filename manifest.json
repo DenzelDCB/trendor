@@ -1,10 +1,32 @@
 {
-  "name": "Hello Extensions",
-  "description": "Base Level Extension",
-  "version": "1.0",
   "manifest_version": 3,
+  "name": "Student Focus Helper",
+  "version": "1.0",
+  "description": "Chrome extension to help students stay focused on their studies by blocking distracting websites",
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "notifications"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
   "action": {
-    "default_popup": "hello.html",
-    "default_icon": "trendor.png"
+    "default_popup": "solution.html",
+    "default_title": "Student Focus Helper"
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
   }
 }
