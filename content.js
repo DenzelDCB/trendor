@@ -4,6 +4,8 @@ let currentOverlay = null;
 let timerInterval = null;
 let lastUrl = window.location.href;
 let focusModeIndicator = null;
+let isBlocked = false;
+let lastBlockedUrl = null;
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -43,10 +45,14 @@ function checkCurrentUrl() {
   chrome.runtime.sendMessage({ action: 'getFocusSession' }, (response) => {
     if (response && response.isActive) {
       const hostname = window.location.hostname;
+      const currentUrl = window.location.href;
       
-      // Check if this is the focus site or allowed site
+      // Check if this is focus site or allowed site
       if (hostname.includes(response.focusSite)) {
-        removeOverlay();
+        if (isBlocked) {
+          removeOverlay();
+          isBlocked = false;
+        }
         showFocusModeIndicator();
         return;
       }
@@ -54,17 +60,27 @@ function checkCurrentUrl() {
       if (response.allowedSites) {
         for (let allowed of response.allowedSites) {
           if (hostname.includes(allowed)) {
-            removeOverlay();
+            if (isBlocked) {
+              removeOverlay();
+              isBlocked = false;
+            }
             showFocusModeIndicator();
             return;
           }
         }
       }
       
-      // This site should be blocked
-      createBlockOverlay(hostname);
+      // This site should be blocked - only create overlay if not already blocked
+      if (!isBlocked || lastBlockedUrl !== currentUrl) {
+        createBlockOverlay(hostname);
+        isBlocked = true;
+        lastBlockedUrl = currentUrl;
+      }
     } else {
-      removeOverlay();
+      if (isBlocked) {
+        removeOverlay();
+        isBlocked = false;
+      }
       removeFocusModeIndicator();
     }
   });
@@ -110,8 +126,8 @@ function removeFocusModeIndicator() {
 
 // Set up multiple monitoring methods
 function setupMonitoring() {
-  // Monitor URL changes every 500ms for immediate detection
-  setInterval(monitorUrlChanges, 500);
+  // Monitor URL changes every 2 seconds (reduced frequency to prevent refresh loops)
+  setInterval(monitorUrlChanges, 2000);
   
   // Monitor pushState and replaceState for SPA navigation
   const originalPushState = history.pushState;
@@ -192,6 +208,10 @@ function removeOverlay() {
     clearInterval(timerInterval);
     timerInterval = null;
   }
+  
+  // Reset blocking state
+  isBlocked = false;
+  lastBlockedUrl = null;
 }
 
 // Update timer display on overlay
