@@ -50,6 +50,7 @@ function setupEventListeners() {
   document.getElementById('strict-mode').addEventListener('change', saveSettings);
   document.getElementById('notifications').addEventListener('change', saveSettings);
   document.getElementById('sound-alerts').addEventListener('change', saveSettings);
+  document.getElementById('tab-limit').addEventListener('change', saveSettings);
   
   // Input validation
   document.getElementById('focus-duration').addEventListener('input', validateDuration);
@@ -238,12 +239,14 @@ async function loadSettings() {
     const settings = result.settings || {
       strictMode: false,
       notifications: true,
-      soundAlerts: true
+      soundAlerts: true,
+      tabLimit: 0
     };
     
     document.getElementById('strict-mode').checked = settings.strictMode;
     document.getElementById('notifications').checked = settings.notifications;
     document.getElementById('sound-alerts').checked = settings.soundAlerts;
+    document.getElementById('tab-limit').value = settings.tabLimit || 0;
     
   } catch (error) {
     console.error('Error loading settings:', error);
@@ -262,7 +265,8 @@ async function saveSettings() {
     const settings = {
       strictMode: document.getElementById('strict-mode').checked,
       notifications: document.getElementById('notifications').checked,
-      soundAlerts: document.getElementById('sound-alerts').checked
+      soundAlerts: document.getElementById('sound-alerts').checked,
+      tabLimit: parseInt(document.getElementById('tab-limit').value) || 0
     };
     
     await chrome.storage.sync.set({ settings });
