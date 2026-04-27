@@ -49,14 +49,61 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   }
 });
 
+// Tab limit enforcement
+async function enforceTabLimit() {
+  try {
+    const settings = await chrome.storage.sync.get(['settings']);
+    const tabLimit = settings.settings?.tabLimit || 0;
+    
+    if (tabLimit <= 0) return; // No limit set
+    
+    const tabs = await chrome.tabs.query({});
+    const normalTabs = tabs.filter(tab => 
+      tab.url && 
+      !tab.url.startsWith('chrome://') && 
+      !tab.url.startsWith('chrome-extension://') &&
+      !tab.url.startsWith('about:')
+    );
+    
+    if (normalTabs.length > tabLimit) {
+      // Close the newest tabs that exceed the limit
+      const tabsToClose = normalTabs.slice(tabLimit);
+      for (const tab of tabsToClose) {
+        try {
+          await chrome.tabs.remove(tab.id);
+          console.log(`Tab limit exceeded: closed tab ${tab.id} (${tab.url})`);
+        } catch (error) {
+          console.error('Error closing tab:', error);
+        }
+      }
+      
+      // Show notification
+      if (settings.settings?.notifications) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icon48.png',
+          title: 'Tab Limit Reached',
+          message: `Closed ${tabsToClose.length} tab(s) to maintain limit of ${tabLimit} tabs`
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error enforcing tab limit:', error);
+  }
+}
+
 // Listen for tab creation (new tabs)
 chrome.tabs.onCreated.addListener((tab) => {
   if (tab.url && tab.url !== 'chrome://newtab/') {
     setTimeout(() => {
       checkAndBlockSite(tab.id, tab.url);
+      enforceTabLimit();
     }, 100); // Small delay to ensure tab is ready
   }
 });
+
+// Monitor tab changes for limit enforcement
+chrome.tabs.onRemoved.addListener(enforceTabLimit);
 
 // Listen for tab replacement (when navigating to existing tab)
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
