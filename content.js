@@ -264,6 +264,14 @@ function createBlockOverlay(blockedHostname) {
 
 // Block page interaction without hiding content
 function blockPageInteraction() {
+  // Add blur effect to the page
+  document.body.style.filter = 'blur(5px)';
+  document.body.style.transition = 'filter 0.3s ease';
+  
+  // Prevent scrolling
+  document.body.style.overflow = 'hidden';
+  document.documentElement.style.overflow = 'hidden';
+  
   // Create invisible overlay to block clicks
   const blocker = document.createElement('div');
   blocker.id = 'focus-interaction-blocker';
@@ -316,6 +324,12 @@ function blockPageInteraction() {
   window.focusBlockerCleanup = () => {
     const blocker = document.getElementById('focus-interaction-blocker');
     if (blocker) blocker.remove();
+    
+    // Remove blur effect and restore scrolling
+    document.body.style.filter = '';
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+    
     document.removeEventListener('click', preventInteraction, true);
     document.removeEventListener('mousedown', preventInteraction, true);
     document.removeEventListener('keydown', preventInteraction, true);
