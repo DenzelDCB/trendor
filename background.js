@@ -142,76 +142,230 @@ function blockSite(tabId, hostname) {
 
 // Function to be injected into blocked pages
 function createBlockOverlay(blockedHostname) {
-  // Remove any existing overlay
-  const existingOverlay = document.getElementById('focus-blocker-overlay');
-  if (existingOverlay) {
-    existingOverlay.remove();
+  // Remove any existing notification
+  const existingNotification = document.getElementById('focus-blocker-notification');
+  if (existingNotification) {
+    existingNotification.remove();
   }
 
-  // Create blocking overlay
-  const overlay = document.createElement('div');
-  overlay.id = 'focus-blocker-overlay';
-  overlay.innerHTML = `
-    <div class="focus-blocker-content">
-      <div class="focus-blocker-icon">🎯</div>
-      <h2>Stay Focused!</h2>
-      <p>This site (${blockedHostname}) is blocked during your focus session.</p>
-      <p>Return to your focus site to continue studying.</p>
-      <div class="focus-blocker-timer">
-        <span id="overlay-time-remaining">25:00</span> remaining
+  // Create small notification instead of full overlay
+  const notification = document.createElement('div');
+  notification.id = 'focus-blocker-notification';
+  notification.innerHTML = `
+    <div class="focus-notification-content">
+      <div class="focus-notification-icon">🎯</div>
+      <div class="focus-notification-text">
+        <strong>${blockedHostname}</strong> blocked • 
+        <span id="notification-time-remaining">25:00</span> remaining
       </div>
-      <button id="unblock-btn" class="btn btn-warning">Temporarily Unblock (5 min)</button>
-      <button id="end-session-btn" class="btn btn-danger">End Focus Session</button>
+      <div class="focus-notification-actions">
+        <button id="temp-unblock-btn" title="Temporarily Unblock (5 min)">⏰</button>
+        <button id="end-session-btn" title="End Focus Session">⏹️</button>
+      </div>
     </div>
   `;
 
-  // Add styles
-  overlay.style.cssText = `
+  // Add styles for small notification
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 999999;
+    box-shadow: 0 4px 20px rgba(238, 90, 36, 0.4);
+    max-width: 400px;
+    animation: slideIn 0.3s ease-out;
+    cursor: pointer;
+  `;
+
+  // Add content styles
+  const content = notification.querySelector('.focus-notification-content');
+  content.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  `;
+
+  const icon = notification.querySelector('.focus-notification-icon');
+  icon.style.cssText = `
+    font-size: 16px;
+    flex-shrink: 0;
+  `;
+
+  const text = notification.querySelector('.focus-notification-text');
+  text.style.cssText = `
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  `;
+
+  const actions = notification.querySelector('.focus-notification-actions');
+  actions.style.cssText = `
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  `;
+
+  const buttons = notification.querySelectorAll('button');
+  buttons.forEach(btn => {
+    btn.style.cssText = `
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    `;
+  });
+
+  document.body.appendChild(notification);
+
+  // Add event listeners
+  document.getElementById('temp-unblock-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    chrome.runtime.sendMessage({ action: 'temporarilyUnblock', site: blockedHostname });
+    cleanupAndRemove();
+  });
+
+  document.getElementById('end-session-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    chrome.runtime.sendMessage({ action: 'endFocusSession' });
+    cleanupAndRemove();
+  });
+
+  // Cleanup function
+  function cleanupAndRemove() {
+    // Clean up interaction blocking
+    if (window.focusBlockerCleanup) {
+      window.focusBlockerCleanup();
+      window.focusBlockerCleanup = null;
+    }
+    notification.remove();
+  }
+
+  // Auto-hide after 8 seconds
+  setTimeout(() => {
+    if (notification.parentNode) {
+      notification.style.animation = 'slideOut 0.3s ease-in';
+      setTimeout(() => {
+        if (notification.parentNode) {
+          // Clean up interaction blocking
+          if (window.focusBlockerCleanup) {
+            window.focusBlockerCleanup();
+            window.focusBlockerCleanup = null;
+          }
+          notification.remove();
+        }
+      }, 300);
+    }
+  }, 8000);
+
+  // Block page interaction (but keep page visible)
+  blockPageInteraction();
+
+  // Request timer updates
+  requestTimerUpdate();
+}
+
+// Block page interaction without hiding content (for background script injection)
+function blockPageInteraction() {
+  // Create invisible overlay to block clicks
+  const blocker = document.createElement('div');
+  blocker.id = 'focus-interaction-blocker';
+  blocker.style.cssText = `
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(255, 235, 59, 0.95);
-    z-index: 999999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: Arial, sans-serif;
+    background: transparent;
+    z-index: 999998;
+    cursor: not-allowed;
   `;
+  document.body.appendChild(blocker);
 
-  // Add content styles
-  const content = overlay.querySelector('.focus-blocker-content');
-  content.style.cssText = `
-    text-align: center;
-    padding: 40px;
-    background: white;
-    border-radius: 15px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-    max-width: 500px;
-  `;
-
-  document.body.appendChild(overlay);
+  // Prevent keyboard shortcuts and interactions
+  const preventInteraction = (e) => {
+    // Allow interaction with notification elements
+    if (e.target.closest('#focus-blocker-notification')) {
+      return;
+    }
+    
+    // Block most interactions
+    if (e.type === 'click' || e.type === 'mousedown' || e.type === 'mouseup') {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+    
+    // Block keyboard shortcuts except for our focus shortcuts
+    if (e.type === 'keydown') {
+      // Allow our shortcuts
+      if (e.ctrlKey && e.shiftKey && (e.key === 'F' || e.key === 'X')) {
+        return;
+      }
+      // Block other potentially disruptive keys
+      if ([32, 33, 34, 35, 36, 37, 38, 39, 40, 8, 46].includes(e.keyCode)) {
+        e.preventDefault();
+        return false;
+      }
+    }
+  };
 
   // Add event listeners
-  document.getElementById('unblock-btn').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ action: 'temporarilyUnblock', site: blockedHostname });
-    overlay.remove();
-  });
-
-  document.getElementById('end-session-btn').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ action: 'endFocusSession' });
-    overlay.remove();
-  });
-
-  // Request timer updates
-  requestTimerUpdate();
+  document.addEventListener('click', preventInteraction, true);
+  document.addEventListener('mousedown', preventInteraction, true);
+  document.addEventListener('keydown', preventInteraction, true);
+  
+  // Store cleanup function
+  window.focusBlockerCleanup = () => {
+    const blocker = document.getElementById('focus-interaction-blocker');
+    if (blocker) blocker.remove();
+    document.removeEventListener('click', preventInteraction, true);
+    document.removeEventListener('mousedown', preventInteraction, true);
+    document.removeEventListener('keydown', preventInteraction, true);
+  };
 }
 
 // Request timer updates from background script
 function requestTimerUpdate() {
   chrome.runtime.sendMessage({ action: 'getTimerUpdate' });
 }
+
+// Add CSS animations
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideOut {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+`;
+document.head.appendChild(style);
 
 // Start focus timer
 function startFocusTimer() {
