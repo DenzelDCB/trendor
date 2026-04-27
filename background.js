@@ -70,13 +70,15 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
 // Continuous monitoring for active focus session
 setInterval(() => {
   if (focusSession && focusSession.isActive) {
-    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-      if (tabs.length > 0 && tabs[0].url) {
-        checkAndBlockSite(tabs[0].id, tabs[0].url);
-      }
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        if (tab.url) {
+          checkAndBlockSite(tab.id, tab.url);
+        }
+      });
     });
   }
-}, 1000); // Check every second for real-time blocking
+}, 500); // Check every 500ms for more responsive updates
 
 // Check if a site should be blocked and block it if necessary
 function checkAndBlockSite(tabId, url) {
