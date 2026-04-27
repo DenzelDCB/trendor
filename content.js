@@ -187,7 +187,7 @@ function createBlockOverlay(blockedHostname) {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
     font-size: 14px;
     font-weight: 500;
-    z-index: 999999;
+    z-index: 1000000;
     box-shadow: 0 4px 20px rgba(238, 90, 36, 0.4);
     max-width: 400px;
     animation: slideIn 0.3s ease-out;
@@ -264,21 +264,39 @@ function createBlockOverlay(blockedHostname) {
 
 // Block page interaction without hiding content
 function blockPageInteraction() {
-  // Create a blur overlay that covers the entire page
+  // Create a blur overlay that covers and blurs everything underneath
   const blurOverlay = document.createElement('div');
   blurOverlay.id = 'focus-blur-overlay';
+  
+  // Get the entire page content and clone it for blur effect
+  const pageContent = document.documentElement.cloneNode(true);
+  pageContent.id = 'blur-content';
+  pageContent.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    filter: blur(5px);
+    -webkit-filter: blur(5px);
+    z-index: 999996;
+    pointer-events: none;
+    opacity: 0.8;
+  `;
+  
+  // Create container for the blurred content
   blurOverlay.style.cssText = `
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px);
     z-index: 999996;
     pointer-events: none;
+    overflow: hidden;
   `;
+  
+  blurOverlay.appendChild(pageContent);
   document.body.appendChild(blurOverlay);
   
   // Prevent scrolling
