@@ -60,9 +60,9 @@ async function enforceTabLimit() {
     const tabs = await chrome.tabs.query({});
     const normalTabs = tabs.filter(tab => 
       tab.url && 
-      !tab.url.startsWith('chrome://') && 
       !tab.url.startsWith('chrome-extension://') &&
-      !tab.url.startsWith('about:')
+      !tab.url.startsWith('about:') &&
+      tab.url !== 'chrome://newtab/'
     );
     
     if (normalTabs.length > tabLimit) {
@@ -94,12 +94,12 @@ async function enforceTabLimit() {
 
 // Listen for tab creation (new tabs)
 chrome.tabs.onCreated.addListener((tab) => {
-  if (tab.url && tab.url !== 'chrome://newtab/') {
-    setTimeout(() => {
+  setTimeout(() => {
+    if (tab.url && tab.url !== 'chrome://newtab/') {
       checkAndBlockSite(tab.id, tab.url);
-      enforceTabLimit();
-    }, 100); // Small delay to ensure tab is ready
-  }
+    }
+    enforceTabLimit(); // Always enforce tab limit, including for new tabs
+  }, 100); // Small delay to ensure tab is ready
 });
 
 // Monitor tab changes for limit enforcement
