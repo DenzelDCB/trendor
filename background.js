@@ -304,9 +304,22 @@ function createBlockOverlay(blockedHostname) {
 
 // Block page interaction without hiding content (for background script injection)
 function blockPageInteraction() {
-  // Add blur effect to the page
-  document.body.style.filter = 'blur(5px)';
-  document.body.style.transition = 'filter 0.3s ease';
+  // Create a blur overlay that covers the entire page
+  const blurOverlay = document.createElement('div');
+  blurOverlay.id = 'focus-blur-overlay';
+  blurOverlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 999996;
+    pointer-events: none;
+  `;
+  document.body.appendChild(blurOverlay);
   
   // Prevent scrolling
   document.body.style.overflow = 'hidden';
@@ -365,8 +378,10 @@ function blockPageInteraction() {
     const blocker = document.getElementById('focus-interaction-blocker');
     if (blocker) blocker.remove();
     
-    // Remove blur effect and restore scrolling
-    document.body.style.filter = '';
+    const blurOverlay = document.getElementById('focus-blur-overlay');
+    if (blurOverlay) blurOverlay.remove();
+    
+    // Restore scrolling
     document.body.style.overflow = '';
     document.documentElement.style.overflow = '';
     
