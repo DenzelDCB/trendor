@@ -2,12 +2,15 @@
 
 let currentOverlay = null;
 let timerInterval = null;
+let lastUrl = window.location.href;
+let focusModeIndicator = null;
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
     case 'sessionEnded':
       removeOverlay();
+      removeFocusModeIndicator();
       break;
     case 'updateTimer':
       updateOverlayTimer(message.timeRemaining);
@@ -15,8 +18,124 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'blockSite':
       createBlockOverlay(message.hostname);
       break;
+    case 'showFocusMode':
+      showFocusModeIndicator();
+      break;
+    case 'hideFocusMode':
+      removeFocusModeIndicator();
+      break;
   }
 });
+
+// Monitor URL changes in real-time
+function monitorUrlChanges() {
+  const currentUrl = window.location.href;
+  
+  if (currentUrl !== lastUrl) {
+    lastUrl = currentUrl;
+    // Check if new URL should be blocked
+    checkCurrentUrl();
+  }
+}
+
+// Check current URL against focus session
+function checkCurrentUrl() {
+  chrome.runtime.sendMessage({ action: 'getFocusSession' }, (response) => {
+    if (response && response.isActive) {
+      const hostname = window.location.hostname;
+      
+      // Check if this is the focus site or allowed site
+      if (hostname.includes(response.focusSite)) {
+        removeOverlay();
+        showFocusModeIndicator();
+        return;
+      }
+      
+      if (response.allowedSites) {
+        for (let allowed of response.allowedSites) {
+          if (hostname.includes(allowed)) {
+            removeOverlay();
+            showFocusModeIndicator();
+            return;
+          }
+        }
+      }
+      
+      // This site should be blocked
+      createBlockOverlay(hostname);
+    } else {
+      removeOverlay();
+      removeFocusModeIndicator();
+    }
+  });
+}
+
+// Show focus mode indicator
+function showFocusModeIndicator() {
+  if (focusModeIndicator) return;
+  
+  focusModeIndicator = document.createElement('div');
+  focusModeIndicator.id = 'focus-mode-indicator';
+  focusModeIndicator.innerHTML = `
+    <div class="focus-indicator-content">
+      🎯 Focus Mode Active
+    </div>
+  `;
+  
+  focusModeIndicator.style.cssText = `
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: #28a745;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: bold;
+    z-index: 999997;
+    animation: pulse 2s infinite;
+    box-shadow: 0 2px 10px rgba(40, 167, 69, 0.3);
+  `;
+  
+  document.body.appendChild(focusModeIndicator);
+}
+
+// Remove focus mode indicator
+function removeFocusModeIndicator() {
+  if (focusModeIndicator) {
+    focusModeIndicator.remove();
+    focusModeIndicator = null;
+  }
+}
+
+// Set up multiple monitoring methods
+function setupMonitoring() {
+  // Monitor URL changes every 500ms for immediate detection
+  setInterval(monitorUrlChanges, 500);
+  
+  // Monitor pushState and replaceState for SPA navigation
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+  
+  history.pushState = function() {
+    originalPushState.apply(this, arguments);
+    setTimeout(monitorUrlChanges, 100);
+  };
+  
+  history.replaceState = function() {
+    originalReplaceState.apply(this, arguments);
+    setTimeout(monitorUrlChanges, 100);
+  };
+  
+  // Monitor hash changes
+  window.addEventListener('hashchange', monitorUrlChanges);
+  
+  // Monitor popstate for browser back/forward
+  window.addEventListener('popstate', monitorUrlChanges);
+  
+  // Initial check
+  setTimeout(checkCurrentUrl, 100);
+}
 
 // Create blocking overlay
 function createBlockOverlay(blockedHostname) {
@@ -140,9 +259,9 @@ function preventScrolling() {
   window.focusBlockerCleanup = cleanup;
 }
 
-// Check if page should be blocked on load
+// Initialize monitoring when page loads
 document.addEventListener('DOMContentLoaded', () => {
-  checkIfShouldBlock();
+  setupMonitoring();
 });
 
 // Also check on navigation
@@ -151,7 +270,7 @@ window.addEventListener('beforeunload', () => {
 });
 
 window.addEventListener('load', () => {
-  checkIfShouldBlock();
+  setupMonitoring();
 });
 
 // Check if current site should be blocked
