@@ -75,6 +75,8 @@ function checkCurrentUrl() {
         createBlockOverlay(hostname);
         isBlocked = true;
         lastBlockedUrl = currentUrl;
+        // Hide focus mode indicator when site is blocked
+        removeFocusModeIndicator();
       }
     } else {
       if (isBlocked) {
