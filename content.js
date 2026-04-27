@@ -77,7 +77,7 @@ function checkCurrentUrl() {
         lastBlockedUrl = currentUrl;
         // Hide focus mode indicator when site is blocked
         removeFocusModeIndicator();
-      }
+      } 
     } else {
       if (isBlocked) {
         removeOverlay();
@@ -155,118 +155,12 @@ function setupMonitoring() {
   setTimeout(checkCurrentUrl, 100);
 }
 
-// Create blocking notification
+// Create blocking overlay (no small notification)
 function createBlockOverlay(blockedHostname) {
-  // Remove any existing notification
+  // Remove any existing overlay
   removeOverlay();
 
-  // Create small notification instead of full overlay
-  currentOverlay = document.createElement('div');
-  currentOverlay.id = 'focus-blocker-notification';
-  currentOverlay.innerHTML = `
-    <div class="focus-notification-content">
-      <div class="focus-notification-icon">🎯</div>
-      <div class="focus-notification-text">
-        <strong>${blockedHostname}</strong> blocked • 
-        <span id="notification-time-remaining">25:00</span> remaining
-      </div>
-      <div class="focus-notification-actions">
-        <button id="temp-unblock-btn" title="Temporarily Unblock (5 min)">⏰</button>
-        <button id="end-session-btn" title="End Focus Session">⏹️</button>
-      </div>
-    </div>
-  `;
-
-  // Add styles for small notification
-  currentOverlay.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: linear-gradient(135deg, #ff6b6b, #ee5a24);
-    color: white;
-    padding: 12px 16px;
-    border-radius: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-    font-size: 14px;
-    font-weight: 500;
-    z-index: 1000000;
-    box-shadow: 0 4px 20px rgba(238, 90, 36, 0.4);
-    max-width: 400px;
-    animation: slideIn 0.3s ease-out;
-    cursor: pointer;
-  `;
-
-  // Add content styles
-  const content = currentOverlay.querySelector('.focus-notification-content');
-  content.style.cssText = `
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  `;
-
-  const icon = currentOverlay.querySelector('.focus-notification-icon');
-  icon.style.cssText = `
-    font-size: 16px;
-    flex-shrink: 0;
-  `;
-
-  const text = currentOverlay.querySelector('.focus-notification-text');
-  text.style.cssText = `
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  `;
-
-  const actions = currentOverlay.querySelector('.focus-notification-actions');
-  actions.style.cssText = `
-    display: flex;
-    gap: 8px;
-    flex-shrink: 0;
-  `;
-
-  const buttons = currentOverlay.querySelectorAll('button');
-  buttons.forEach(btn => {
-    btn.style.cssText = `
-      background: rgba(255, 255, 255, 0.2);
-      border: none;
-      border-radius: 6px;
-      padding: 4px 8px;
-      font-size: 12px;
-      cursor: pointer;
-      transition: background 0.2s;
-    `;
-  });
-
-  // Add the notification to the page
-  document.body.appendChild(currentOverlay);
-
-  // Add event listeners
-  document.getElementById('temp-unblock-btn').addEventListener('click', temporarilyUnblock);
-  document.getElementById('end-session-btn').addEventListener('click', endFocusSession);
-
-  // Start timer updates
-  startTimerUpdates();
-
-  // Block page interaction (but keep page visible)
-  blockPageInteraction();
-
-  // Auto-hide after 8 seconds
-  setTimeout(() => {
-    if (currentOverlay && currentOverlay.parentNode) {
-      currentOverlay.style.animation = 'slideOut 0.3s ease-in';
-      setTimeout(() => {
-        if (currentOverlay && currentOverlay.parentNode) {
-          removeOverlay();
-        }
-      }, 300);
-    }
-  }, 8000);
-}
-
-// Block page interaction without hiding content
-function blockPageInteraction() {
-  // Create a full-page blocking overlay
+  // Create full-page blocking overlay (no small notification)
   const pageBlocker = document.createElement('div');
   pageBlocker.id = 'focus-page-blocker';
   pageBlocker.style.cssText = `
