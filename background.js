@@ -30,8 +30,10 @@ async function loadStoredData() {
 
 // Listen for tab updates to check if site should be blocked
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url) {
-    checkAndBlockSite(tabId, tab.url);
+  // Check on any URL change, not just complete
+  if (changeInfo.url || (changeInfo.status === 'complete' && tab.url)) {
+    const url = changeInfo.url || tab.url;
+    checkAndBlockSite(tabId, url);
   }
 });
 
@@ -47,21 +49,63 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   }
 });
 
+// Listen for tab creation (new tabs)
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.url && tab.url !== 'chrome://newtab/') {
+    setTimeout(() => {
+      checkAndBlockSite(tab.id, tab.url);
+    }, 100); // Small delay to ensure tab is ready
+  }
+});
+
+// Listen for tab replacement (when navigating to existing tab)
+chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
+  chrome.tabs.get(addedTabId, (tab) => {
+    if (tab.url) {
+      checkAndBlockSite(addedTabId, tab.url);
+    }
+  });
+});
+
+// Continuous monitoring for active focus session
+setInterval(() => {
+  if (focusSession && focusSession.isActive) {
+    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+      if (tabs.length > 0 && tabs[0].url) {
+        checkAndBlockSite(tabs[0].id, tabs[0].url);
+      }
+    });
+  }
+}, 1000); // Check every second for real-time blocking
+
 // Check if a site should be blocked and block it if necessary
 function checkAndBlockSite(tabId, url) {
   if (!focusSession || !focusSession.isActive) {
     return;
   }
 
-  const hostname = new URL(url).hostname;
-  
-  // Allow focus site and allowed sites
-  if (isAllowedSite(hostname)) {
+  // Skip chrome://, chrome-extension://, and file:// URLs
+  if (url.startsWith('chrome://') || 
+      url.startsWith('chrome-extension://') || 
+      url.startsWith('file://') ||
+      url.startsWith('moz-extension://') ||
+      url.startsWith('edge://')) {
     return;
   }
 
-  // Block the site
-  blockSite(tabId, hostname);
+  try {
+    const hostname = new URL(url).hostname;
+    
+    // Allow focus site and allowed sites
+    if (isAllowedSite(hostname)) {
+      return;
+    }
+
+    // Block the site
+    blockSite(tabId, hostname);
+  } catch (error) {
+    console.error('Error parsing URL:', url, error);
+  }
 }
 
 // Check if a site is allowed
@@ -83,11 +127,17 @@ function isAllowedSite(hostname) {
 
 // Block a site by injecting content script
 function blockSite(tabId, hostname) {
-  chrome.scripting.executeScript({
-    target: { tabId: tabId },
-    func: createBlockOverlay,
-    args: [hostname]
-  });
+  try {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      func: createBlockOverlay,
+      args: [hostname]
+    }).catch(error => {
+      console.error('Error injecting script:', error);
+    });
+  } catch (error) {
+    console.error('Error blocking site:', hostname, error);
+  }
 }
 
 // Function to be injected into blocked pages
@@ -212,10 +262,14 @@ async function endFocusSession() {
     focusSession = null;
     await chrome.storage.sync.set({ focusSession: null });
     
-    // Notify all tabs
+    // Notify all tabs to remove overlays and indicators
     const tabs = await chrome.tabs.query({});
     tabs.forEach(tab => {
-      chrome.tabs.sendMessage(tab.id, { action: 'sessionEnded' });
+      try {
+        chrome.tabs.sendMessage(tab.id, { action: 'sessionEnded' });
+      } catch (error) {
+        // Ignore errors for tabs that can't receive messages
+      }
     });
   }
 }
@@ -262,26 +316,39 @@ function showSessionCompleteNotification() {
 
 // Listen for messages from popup and content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  switch (message.action) {
-    case 'startFocusSession':
-      startFocusSession(message.data);
-      break;
-    case 'endFocusSession':
-      endFocusSession();
-      break;
-    case 'getFocusSession':
-      sendResponse(focusSession);
-      break;
-    case 'temporarilyUnblock':
-      temporarilyUnblockSite(message.site);
-      break;
-    case 'getTimerUpdate':
-      if (focusSession && focusSession.endTime) {
-        const remaining = focusSession.endTime - Date.now();
-        sendResponse({ timeRemaining: remaining });
-      }
-      break;
+  try {
+    switch (message.action) {
+      case 'startFocusSession':
+        startFocusSession(message.data);
+        sendResponse({ success: true });
+        break;
+      case 'endFocusSession':
+        endFocusSession();
+        sendResponse({ success: true });
+        break;
+      case 'getFocusSession':
+        sendResponse(focusSession);
+        return true; // Keep message channel open for async response
+      case 'temporarilyUnblock':
+        temporarilyUnblockSite(message.site);
+        sendResponse({ success: true });
+        break;
+      case 'getTimerUpdate':
+        if (focusSession && focusSession.endTime) {
+          const remaining = focusSession.endTime - Date.now();
+          sendResponse({ timeRemaining: remaining });
+        } else {
+          sendResponse({ timeRemaining: 0 });
+        }
+        return true; // Keep message channel open for async response
+      default:
+        sendResponse({ error: 'Unknown action' });
+    }
+  } catch (error) {
+    console.error('Error handling message:', error);
+    sendResponse({ error: error.message });
   }
+  return true; // Keep message channel open
 });
 
 // Start focus session
@@ -298,12 +365,23 @@ async function startFocusSession(data) {
   await chrome.storage.sync.set({ focusSession: focusSession });
   startFocusTimer();
 
-  // Check all current tabs
+  // Check all current tabs immediately
   const tabs = await chrome.tabs.query({});
   tabs.forEach(tab => {
     if (tab.url) {
       checkAndBlockSite(tab.id, tab.url);
     }
+  });
+
+  // Notify all tabs about focus mode start
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach(tab => {
+      try {
+        chrome.tabs.sendMessage(tab.id, { action: 'showFocusMode' });
+      } catch (error) {
+        // Ignore errors for tabs that can't receive messages
+      }
+    });
   });
 }
 
