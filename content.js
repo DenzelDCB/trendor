@@ -153,37 +153,91 @@ function setupMonitoring() {
   setTimeout(checkCurrentUrl, 100);
 }
 
-// Create blocking overlay
+// Create blocking notification
 function createBlockOverlay(blockedHostname) {
-  // Remove any existing overlay
+  // Remove any existing notification
   removeOverlay();
 
-  // Create the overlay element
+  // Create small notification instead of full overlay
   currentOverlay = document.createElement('div');
-  currentOverlay.id = 'focus-blocker-overlay';
+  currentOverlay.id = 'focus-blocker-notification';
   currentOverlay.innerHTML = `
-    <div class="focus-blocker-content">
-      <div class="focus-blocker-icon">🎯</div>
-      <h2>Stay Focused!</h2>
-      <p>This site (${blockedHostname}) is blocked during your focus session.</p>
-      <p>Return to your focus site to continue studying.</p>
-      <div class="focus-blocker-timer">
-        <span id="overlay-time-remaining">25:00</span> remaining
+    <div class="focus-notification-content">
+      <div class="focus-notification-icon">🎯</div>
+      <div class="focus-notification-text">
+        <strong>${blockedHostname}</strong> blocked • 
+        <span id="notification-time-remaining">25:00</span> remaining
       </div>
-      <div class="focus-blocker-actions">
-        <button id="temp-unblock-btn" class="btn btn-warning">Temporarily Unblock (5 min)</button>
-        <button id="end-session-btn" class="btn btn-danger">End Focus Session</button>
-      </div>
-      <div class="focus-motivation">
-        <p>💪 Remember your goals!</p>
-        <p>Every focused minute brings you closer to success.</p>
+      <div class="focus-notification-actions">
+        <button id="temp-unblock-btn" title="Temporarily Unblock (5 min)">⏰</button>
+        <button id="end-session-btn" title="End Focus Session">⏹️</button>
       </div>
     </div>
   `;
 
-  // Add the overlay to the page
+  // Add styles for small notification
+  currentOverlay.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 999999;
+    box-shadow: 0 4px 20px rgba(238, 90, 36, 0.4);
+    max-width: 400px;
+    animation: slideIn 0.3s ease-out;
+    cursor: pointer;
+  `;
+
+  // Add content styles
+  const content = currentOverlay.querySelector('.focus-notification-content');
+  content.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  `;
+
+  const icon = currentOverlay.querySelector('.focus-notification-icon');
+  icon.style.cssText = `
+    font-size: 16px;
+    flex-shrink: 0;
+  `;
+
+  const text = currentOverlay.querySelector('.focus-notification-text');
+  text.style.cssText = `
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  `;
+
+  const actions = currentOverlay.querySelector('.focus-notification-actions');
+  actions.style.cssText = `
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  `;
+
+  const buttons = currentOverlay.querySelectorAll('button');
+  buttons.forEach(btn => {
+    btn.style.cssText = `
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    `;
+  });
+
+  // Add the notification to the page
   document.body.appendChild(currentOverlay);
-  document.body.style.overflow = 'hidden';
 
   // Add event listeners
   document.getElementById('temp-unblock-btn').addEventListener('click', temporarilyUnblock);
@@ -192,8 +246,80 @@ function createBlockOverlay(blockedHostname) {
   // Start timer updates
   startTimerUpdates();
 
-  // Prevent scrolling
-  preventScrolling();
+  // Block page interaction (but keep page visible)
+  blockPageInteraction();
+
+  // Auto-hide after 8 seconds
+  setTimeout(() => {
+    if (currentOverlay && currentOverlay.parentNode) {
+      currentOverlay.style.animation = 'slideOut 0.3s ease-in';
+      setTimeout(() => {
+        if (currentOverlay && currentOverlay.parentNode) {
+          removeOverlay();
+        }
+      }, 300);
+    }
+  }, 8000);
+}
+
+// Block page interaction without hiding content
+function blockPageInteraction() {
+  // Create invisible overlay to block clicks
+  const blocker = document.createElement('div');
+  blocker.id = 'focus-interaction-blocker';
+  blocker.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    z-index: 999998;
+    cursor: not-allowed;
+  `;
+  document.body.appendChild(blocker);
+
+  // Prevent keyboard shortcuts and interactions
+  const preventInteraction = (e) => {
+    // Allow interaction with notification elements
+    if (e.target.closest('#focus-blocker-notification')) {
+      return;
+    }
+    
+    // Block most interactions
+    if (e.type === 'click' || e.type === 'mousedown' || e.type === 'mouseup') {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+    
+    // Block keyboard shortcuts except for our focus shortcuts
+    if (e.type === 'keydown') {
+      // Allow our shortcuts
+      if (e.ctrlKey && e.shiftKey && (e.key === 'F' || e.key === 'X')) {
+        return;
+      }
+      // Block other potentially disruptive keys
+      if ([32, 33, 34, 35, 36, 37, 38, 39, 40, 8, 46].includes(e.keyCode)) {
+        e.preventDefault();
+        return false;
+      }
+    }
+  };
+
+  // Add event listeners
+  document.addEventListener('click', preventInteraction, true);
+  document.addEventListener('mousedown', preventInteraction, true);
+  document.addEventListener('keydown', preventInteraction, true);
+  
+  // Store cleanup function
+  window.focusBlockerCleanup = () => {
+    const blocker = document.getElementById('focus-interaction-blocker');
+    if (blocker) blocker.remove();
+    document.removeEventListener('click', preventInteraction, true);
+    document.removeEventListener('mousedown', preventInteraction, true);
+    document.removeEventListener('keydown', preventInteraction, true);
+  };
 }
 
 // Remove the blocking overlay
@@ -209,6 +335,12 @@ function removeOverlay() {
     timerInterval = null;
   }
   
+  // Clean up interaction blocking
+  if (window.focusBlockerCleanup) {
+    window.focusBlockerCleanup();
+    window.focusBlockerCleanup = null;
+  }
+  
   // Reset blocking state
   isBlocked = false;
   lastBlockedUrl = null;
@@ -217,9 +349,9 @@ function removeOverlay() {
   setupMonitoring();
 }
 
-// Update timer display on overlay
+// Update timer display on notification
 function updateOverlayTimer(timeString) {
-  const timerElement = document.getElementById('overlay-time-remaining');
+  const timerElement = document.getElementById('notification-time-remaining');
   if (timerElement) {
     timerElement.textContent = timeString;
   }
@@ -368,13 +500,30 @@ style.textContent = `
     100% { opacity: 0.95; }
   }
   
-  #focus-blocker-overlay {
-    animation: fadeIn 0.3s ease-in;
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
   }
   
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+  @keyframes slideOut {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  
+  #focus-blocker-notification {
+    animation: slideIn 0.3s ease-out;
   }
 `;
 document.head.appendChild(style);
