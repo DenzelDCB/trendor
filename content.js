@@ -264,38 +264,42 @@ function createBlockOverlay(blockedHostname) {
 
 // Block page interaction without hiding content
 function blockPageInteraction() {
-  // Create a simple blocking message overlay
-  const blockingMessage = document.createElement('div');
-  blockingMessage.id = 'focus-blocking-message';
-  blockingMessage.style.cssText = `
+  // Create a full-page blocking overlay
+  const pageBlocker = document.createElement('div');
+  pageBlocker.id = 'focus-page-blocker';
+  pageBlocker.style.cssText = `
     position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: white;
-    color: #333;
-    padding: 30px 40px;
-    border-radius: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-    font-size: 18px;
-    font-weight: 500;
-    text-align: center;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
     z-index: 999996;
-    max-width: 400px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
   `;
-  blockingMessage.innerHTML = `
-    <div style="margin-bottom: 15px;">
-      <div style="font-size: 32px; margin-bottom: 10px;">🚫</div>
-      <div style="font-weight: 600; color: #e74c3c; margin-bottom: 10px;">This Page is Blocked</div>
-    </div>
-    <div style="color: #666; line-height: 1.5;">
+  
+  // Create blocking message content
+  const messageContent = document.createElement('div');
+  messageContent.style.cssText = `
+    text-align: center;
+    color: #495057;
+    padding: 40px;
+    max-width: 500px;
+  `;
+  messageContent.innerHTML = `
+    <div style="font-size: 48px; margin-bottom: 20px;">🚫</div>
+    <div style="font-size: 24px; font-weight: 600; color: #e74c3c; margin-bottom: 15px;">This Page is Blocked</div>
+    <div style="font-size: 16px; color: #6c757d; line-height: 1.6;">
       Please move to your focus page to continue studying.<br>
       Your focus session is still active.
     </div>
   `;
   
-  document.body.appendChild(blockingMessage);
+  pageBlocker.appendChild(messageContent);
+  document.body.appendChild(pageBlocker);
   
   // Prevent scrolling
   document.body.style.overflow = 'hidden';
@@ -354,8 +358,8 @@ function blockPageInteraction() {
     const blocker = document.getElementById('focus-interaction-blocker');
     if (blocker) blocker.remove();
     
-    const blockingMessage = document.getElementById('focus-blocking-message');
-    if (blockingMessage) blockingMessage.remove();
+    const pageBlocker = document.getElementById('focus-page-blocker');
+    if (pageBlocker) pageBlocker.remove();
     
     // Restore scrolling
     document.body.style.overflow = '';
