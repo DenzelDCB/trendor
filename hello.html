@@ -1,6 +1,111 @@
-<html>
-  <body>
-    <h1>Hello Extensions</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Focus Helper</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 Student Focus Helper</h1>
+            <p>Stay focused on your studies and achieve your goals</p>
+        </header>
+
+        <main>
+            <!-- Focus Session Setup -->
+            <section class="focus-setup">
+                <h2>Start Focus Session</h2>
+                
+                <div class="input-group">
+                    <label for="focus-site">Focus Website:</label>
+                    <input type="text" id="focus-site" placeholder="e.g., khanacademy.org, coursera.org">
+                </div>
+
+                <div class="input-group">
+                    <label for="focus-duration">Focus Duration (minutes):</label>
+                    <input type="number" id="focus-duration" value="25" min="1" max="180">
+                </div>
+
+                <div class="input-group">
+                    <label for="allowed-sites">Additional Allowed Sites:</label>
+                    <textarea id="allowed-sites" placeholder="Enter allowed sites (one per line)&#10;e.g., wikipedia.org&#10;stackoverflow.com"></textarea>
+                </div>
+
+                <button id="start-focus" class="btn btn-primary">Start Focus Session</button>
+                <button id="stop-focus" class="btn btn-secondary" disabled>Stop Focus Session</button>
+            </section>
+
+            <!-- Current Session Status -->
+            <section class="session-status">
+                <h2>Current Session</h2>
+                <div id="session-info" class="hidden">
+                    <div class="timer-display">
+                        <span id="time-remaining">25:00</span>
+                    </div>
+                    <div class="session-stats">
+                        <p>Focus Site: <strong id="current-focus-site">-</strong></p>
+                        <p>Sessions Completed Today: <strong id="sessions-completed">0</strong></p>
+                        <p>Total Focus Time Today: <strong id="total-focus-time">0 min</strong></p>
+                    </div>
+                </div>
+                <div id="no-session" class="no-session">
+                    <p>No active focus session. Start one to begin!</p>
+                </div>
+            </section>
+
+            <!-- Statistics -->
+            <section class="statistics">
+                <h2>Your Progress</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Today</h3>
+                        <p class="stat-value" id="today-sessions">0</p>
+                        <p class="stat-label">Sessions</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>This Week</h3>
+                        <p class="stat-value" id="week-sessions">0</p>
+                        <p class="stat-label">Sessions</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Total Time</h3>
+                        <p class="stat-value" id="total-time">0h</p>
+                        <p class="stat-label">Focused</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings -->
+            <section class="settings">
+                <h2>Settings</h2>
+                <div class="setting-item">
+                    <label>
+                        <input type="checkbox" id="strict-mode">
+                        Strict Mode (Block all non-allowed sites)
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label>
+                        <input type="checkbox" id="notifications" checked>
+                        Enable notifications
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label>
+                        <input type="checkbox" id="sound-alerts" checked>
+                        Sound alerts for session end
+                    </label>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>💪 Stay focused, achieve your goals!</p>
+        </footer>
+    </div>
+
     <script src="popup.js"></script>
-  </body>
+</body>
 </html>
