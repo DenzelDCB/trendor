@@ -3,6 +3,7 @@
 /* Scope styles to extension popup only */
 body.extension-popup {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  width: 500px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #333;
   line-height: 1.6;
