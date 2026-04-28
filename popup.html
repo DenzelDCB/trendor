@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Focus Helper 2.0</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="extension-popup">
+    <div class="container">
+        <!-- Header with Navigation -->
+        <header>
+            <div class="header-content">
+                <div class="logo">
+                    <h1>🎯 Focus Helper 2.0</h1>
+                    <div class="version-badge">v2.0</div>
+                </div>
+                <nav class="tab-navigation">
+                    <button class="tab-btn active" data-tab="focus">Focus</button>
+                    <button class="tab-btn" data-tab="analytics">Analytics</button>
+                    <button class="tab-btn" data-tab="schedule">Schedule</button>
+                    <button class="tab-btn" data-tab="settings">Settings</button>
+                </nav>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main>
+            <!-- Focus Tab -->
+            <div class="tab-content active" id="focus-tab">
+                <!-- Quick Actions -->
+                <section class="quick-actions">
+                    <div class="action-grid">
+                        <button class="quick-action-btn" id="quick-25">
+                            <span class="icon">⏱️</span>
+                            <span class="label">25 min</span>
+                        </button>
+                        <button class="quick-action-btn" id="quick-45">
+                            <span class="icon">⏰</span>
+                            <span class="label">45 min</span>
+                        </button>
+                        <button class="quick-action-btn" id="quick-60">
+                            <span class="icon">📚</span>
+                            <span class="label">60 min</span>
+                        </button>
+                        <button class="quick-action-btn" id="quick-pomodoro">
+                            <span class="icon">🍅</span>
+                            <span class="label">Pomodoro</span>
+                        </button>
+                    </div>
+                </section>
+
+                <!-- Focus Session Setup -->
+                <section class="focus-setup">
+                    <h2>Start Focus Session</h2>
+                    
+                    <div class="input-group">
+                        <label for="focus-site">Focus Website:</label>
+                        <div class="input-with-suggestions">
+                            <input type="text" id="focus-site" placeholder="e.g., khanacademy.org, coursera.org" list="site-suggestions">
+                            <datalist id="site-suggestions">
+                                <option value="khanacademy.org">
+                                <option value="coursera.org">
+                                <option value="edx.org">
+                                <option value="udemy.com">
+                                <option value="duolingo.com">
+                            </datalist>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="focus-duration">Duration (minutes):</label>
+                        <div class="duration-selector">
+                            <input type="range" id="focus-duration" value="25" min="5" max="180" step="5">
+                            <span class="duration-display">25 min</span>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="session-type">Session Type:</label>
+                        <select id="session-type">
+                            <option value="study">📚 Study Session</option>
+                            <option value="work">💼 Work Session</option>
+                            <option value="reading">📖 Reading</option>
+                            <option value="coding">💻 Coding</option>
+                            <option value="creative">🎨 Creative Work</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="allowed-sites">Additional Allowed Sites:</label>
+                        <textarea id="allowed-sites" placeholder="Enter allowed sites (one per line)
+Full URLs for specific pages:
+https://www.youtube.com/watch?v=abc123
+https://khanacademy.org/math/algebra
+
+Or just domains for entire sites:
+wikipedia.org
+stackoverflow.com"></textarea>
+                        <div class="site-tags" id="site-tags"></div>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="tab-limit">Tab Limit (0 = unlimited):</label>
+                        <div class="tab-limit-selector">
+                            <input type="number" id="tab-limit" min="0" max="20" value="0">
+                            <button class="btn btn-secondary" id="auto-detect">Auto-detect</button>
+                        </div>
+                    </div>
+
+                    <div class="session-controls">
+                        <button id="start-focus" class="btn btn-primary">
+                            <span class="btn-icon">▶️</span>
+                            Start Focus Session
+                        </button>
+                        <button id="stop-focus" class="btn btn-secondary" disabled>
+                            <span class="btn-icon">⏹️</span>
+                            Stop Session
+                        </button>
+                        <button id="pause-focus" class="btn btn-warning" disabled>
+                            <span class="btn-icon">⏸️</span>
+                            Pause
+                        </button>
+                    </div>
+                </section>
+
+                <!-- Current Session Status -->
+                <section class="session-status">
+                    <h2>Current Session</h2>
+                    <div id="session-info" class="hidden">
+                        <div class="timer-display">
+                            <div class="timer-circle">
+                                <svg viewBox="0 0 36 36">
+                                    <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                    <path class="circle-progress" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" stroke-dasharray="0, 100"/>
+                                </svg>
+                                <span id="time-remaining">25:00</span>
+                            </div>
+                        </div>
+                        <div class="session-stats">
+                            <div class="stat-item">
+                                <span class="stat-label">Focus Site:</span>
+                                <span class="stat-value" id="current-focus-site">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Session Type:</span>
+                                <span class="stat-value" id="current-session-type">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Sessions Today:</span>
+                                <span class="stat-value" id="sessions-completed">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Total Focus Time:</span>
+                                <span class="stat-value" id="total-focus-time">0 min</span>
+                            </div>
+                        </div>
+                        <div class="session-actions">
+                            <button class="btn btn-small btn-primary" id="extend-session">+5 min</button>
+                            <button class="btn btn-small btn-secondary" id="skip-break">Skip Break</button>
+                        </div>
+                    </div>
+                    <div id="no-session" class="no-session">
+                        <div class="no-session-icon">🎯</div>
+                        <p>No active focus session. Start one to begin!</p>
+                        <button class="btn btn-text" id="quick-start">Quick Start</button>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Analytics Tab -->
+            <div class="tab-content" id="analytics-tab">
+                <section class="analytics-overview">
+                    <h2>Your Progress</h2>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">📅</div>
+                            <div class="stat-content">
+                                <h3>Today</h3>
+                                <p class="stat-value" id="today-sessions">0</p>
+                                <p class="stat-label">Sessions</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📊</div>
+                            <div class="stat-content">
+                                <h3>This Week</h3>
+                                <p class="stat-value" id="week-sessions">0</p>
+                                <p class="stat-label">Sessions</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">⏱️</div>
+                            <div class="stat-content">
+                                <h3>Total Time</h3>
+                                <p class="stat-value" id="total-time">0h</p>
+                                <p class="stat-label">Focused</p>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">🔥</div>
+                            <div class="stat-content">
+                                <h3>Streak</h3>
+                                <p class="stat-value" id="current-streak">0</p>
+                                <p class="stat-label">Days</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="detailed-analytics">
+                    <h3>Detailed Analytics</h3>
+                    <div class="chart-container">
+                        <canvas id="focus-chart" width="300" height="150"></canvas>
+                    </div>
+                    <div class="productivity-tips">
+                        <h4>💡 Productivity Insights</h4>
+                        <div id="insights-list">
+                            <div class="insight-item">Your most productive time is in the morning</div>
+                            <div class="insight-item">You focus better with 25-minute sessions</div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Schedule Tab -->
+            <div class="tab-content" id="schedule-tab">
+                <section class="schedule-setup">
+                    <h2>Smart Scheduling</h2>
+                    <div class="schedule-options">
+                        <div class="schedule-option">
+                            <input type="radio" id="manual-schedule" name="schedule-type" value="manual" checked>
+                            <label for="manual-schedule">Manual Schedule</label>
+                        </div>
+                        <div class="schedule-option">
+                            <input type="radio" id="auto-schedule" name="schedule-type" value="auto">
+                            <label for="auto-schedule">AI-Powered Schedule</label>
+                        </div>
+                    </div>
+                    
+                    <div class="time-slots">
+                        <h3>Focus Time Slots</h3>
+                        <div id="time-slots-list">
+                            <div class="time-slot">
+                                <input type="time" value="09:00" class="slot-time">
+                                <input type="time" value="10:30" class="slot-end">
+                                <input type="text" placeholder="Activity" class="slot-activity">
+                                <button class="btn btn-small btn-danger remove-slot">Remove</button>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" id="add-time-slot">+ Add Time Slot</button>
+                    </div>
+                </section>
+
+                <section class="upcoming-sessions">
+                    <h3>Upcoming Sessions</h3>
+                    <div id="upcoming-list">
+                        <div class="upcoming-item">
+                            <span class="time">09:00 - 10:30</span>
+                            <span class="activity">Math Study</span>
+                            <span class="status">Scheduled</span>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Settings Tab -->
+            <div class="tab-content" id="settings-tab">
+                <section class="settings">
+                    <h2>Settings</h2>
+                    
+                    <div class="settings-group">
+                        <h3>Focus Settings</h3>
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="strict-mode">
+                                Strict Mode (Block all non-allowed sites)
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="smart-blocking" checked>
+                                Smart Blocking (AI-powered)
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="break-reminders" checked>
+                                Break Reminders
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <h3>Notifications</h3>
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="notifications" checked>
+                                Enable notifications
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="sound-alerts" checked>
+                                Sound alerts for session end
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="desktop-notifications" checked>
+                                Desktop notifications
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <h3>Appearance</h3>
+                        <div class="setting-item">
+                            <label for="theme">Theme:</label>
+                            <select id="theme">
+                                <option value="light">Light</option>
+                                <option value="dark">Dark</option>
+                                <option value="auto">Auto</option>
+                            </select>
+                        </div>
+                        <div class="setting-item">
+                            <label for="accent-color">Accent Color:</label>
+                            <input type="color" id="accent-color" value="#667eea">
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <h3>Data & Privacy</h3>
+                        <div class="setting-item">
+                            <button class="btn btn-secondary" id="export-data">Export Data</button>
+                            <button class="btn btn-danger" id="clear-data">Clear All Data</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer>
+            <div class="footer-content">
+                <p>💪 Stay focused, achieve your goals!</p>
+                <div class="footer-actions">
+                    <button class="btn btn-text" id="help-btn">Help</button>
+                    <button class="btn btn-text" id="feedback-btn">Feedback</button>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
