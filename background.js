@@ -8,6 +8,9 @@ let analyticsData = null;
 let isPaused = false;
 let breakTimer = null;
 let pomodoroState = null;
+let sessionTracker = null;
+let websiteVisits = new Map();
+let sessionReports = [];
 
 // Initialize extension
 chrome.runtime.onInstalled.addListener(() => {
@@ -21,12 +24,13 @@ chrome.runtime.onInstalled.addListener(() => {
 // Load stored data from chrome.storage
 async function loadStoredData() {
   try {
-    const result = await chrome.storage.sync.get(['focusSession', 'blockedSites', 'statistics', 'schedule', 'settings']);
+    const result = await chrome.storage.sync.get(['focusSession', 'blockedSites', 'statistics', 'schedule', 'settings', 'sessionReports']);
     
     if (result.focusSession) {
       focusSession = result.focusSession;
       if (focusSession.isActive && !focusSession.isPaused) {
         startFocusTimer();
+        startSessionTracking();
       }
     }
     
@@ -51,6 +55,8 @@ async function loadStoredData() {
       timeSlots: [],
       upcomingSessions: []
     };
+    
+    sessionReports = result.sessionReports || [];
     
     // Check for scheduled sessions
     checkScheduledSessions();
@@ -146,8 +152,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     checkAndBlockSite(tabId, url);
     
     // Track site visits for analytics
-    if (focusSession && focusSession.isActive) {
+    if (focusSession && focusSession.isActive && !isPaused) {
       trackSiteVisit(url);
+      trackWebsiteTime(tabId, url);
     }
   }
 });
@@ -714,6 +721,7 @@ async function startFocusSession(data) {
 
   await chrome.storage.sync.set({ focusSession: focusSession });
   startFocusTimer();
+  startSessionTracking();
 
   // Set alarm for session end
   chrome.alarms.create('focusSessionEnd', {
@@ -757,6 +765,9 @@ async function endFocusSession() {
   if (focusSession) {
     // Calculate actual duration
     const actualDuration = Math.min(focusSession.duration, Math.floor((Date.now() - focusSession.startTime) / 60000));
+    
+    // Stop session tracking and generate report
+    stopSessionTracking();
     
     // Update statistics
     await updateStatistics(actualDuration);
@@ -916,6 +927,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ timeRemaining: 0 });
         }
         return true;
+      case 'getSessionReports':
+        sendResponse(sessionReports);
+        return true;
+      case 'getSessionReport':
+        const report = sessionReports.find(r => r.sessionId === message.sessionId);
+        sendResponse(report);
+        return true;
+      case 'deleteSessionReport':
+        sessionReports = sessionReports.filter(r => r.sessionId !== message.sessionId);
+        chrome.storage.sync.set({ sessionReports: sessionReports });
+        sendResponse({ success: true });
+        break;
       default:
         sendResponse({ error: 'Unknown action' });
     }
@@ -1117,4 +1140,200 @@ function resetWeeklyStats() {
     analyticsData.weekSessions = 0;
     chrome.storage.sync.set({ statistics: analyticsData });
   }
+}
+
+// Session tracking functions
+function startSessionTracking() {
+  if (sessionTracker) {
+    clearInterval(sessionTracker);
+  }
+  
+  websiteVisits.clear();
+  
+  sessionTracker = setInterval(() => {
+    if (focusSession && focusSession.isActive && !isPaused) {
+      updateActiveTabTime();
+    }
+  }, 5000); // Track every 5 seconds
+}
+
+function stopSessionTracking() {
+  if (sessionTracker) {
+    clearInterval(sessionTracker);
+    sessionTracker = null;
+  }
+  
+  // Generate session report
+  generateSessionReport();
+}
+
+function trackWebsiteTime(tabId, url) {
+  try {
+    const hostname = new URL(url).hostname;
+    const now = Date.now();
+    
+    if (!websiteVisits.has(hostname)) {
+      websiteVisits.set(hostname, {
+        url: url,
+        hostname: hostname,
+        totalTime: 0,
+        visitCount: 0,
+        firstVisit: now,
+        lastVisit: now,
+        category: categorizeWebsite(hostname),
+        isRelevant: isWebsiteRelevant(hostname, focusSession)
+      });
+    }
+    
+    const visitData = websiteVisits.get(hostname);
+    visitData.visitCount++;
+    visitData.lastVisit = now;
+    
+  } catch (error) {
+    console.error('Error tracking website time:', error);
+  }
+}
+
+function updateActiveTabTime() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs.length > 0 && tabs[0].url) {
+      const url = tabs[0].url;
+      try {
+        const hostname = new URL(url).hostname;
+        
+        if (websiteVisits.has(hostname)) {
+          const visitData = websiteVisits.get(hostname);
+          visitData.totalTime += 5000; // Add 5 seconds
+        }
+      } catch (error) {
+        console.error('Error updating active tab time:', error);
+      }
+    }
+  });
+}
+
+function categorizeWebsite(hostname) {
+  const categories = {
+    educational: ['khanacademy', 'coursera', 'edx', 'udemy', 'duolingo', 'wikipedia', 'stackoverflow', 'github', 'python', 'programiz', 'realpython', 'exercism', 'w3schools', 'pythontutor'],
+    productivity: ['google', 'gmail', 'mail', 'calendar', 'drive', 'docs', 'sheets'],
+    social: ['facebook', 'twitter', 'instagram', 'linkedin', 'reddit', 'tiktok'],
+    entertainment: ['youtube', 'netflix', 'hulu', 'twitch'],
+    shopping: ['amazon', 'ebay', 'etsy'],
+    news: ['cnn', 'bbc', 'reuters', 'washingtonpost'],
+    other: []
+  };
+  
+  for (const [category, keywords] of Object.entries(categories)) {
+    if (keywords.some(keyword => hostname.includes(keyword))) {
+      return category;
+    }
+  }
+  
+  return 'other';
+}
+
+function isWebsiteRelevant(hostname, session) {
+  if (!session) return false;
+  
+  // Check if it's the focus site
+  if (hostname.includes(session.focusSite)) return true;
+  
+  // Check if it's in allowed sites
+  if (session.allowedSites && session.allowedSites.some(site => hostname.includes(site))) {
+    return true;
+  }
+  
+  // Check if it's educational
+  const category = categorizeWebsite(hostname);
+  return category === 'educational';
+}
+
+function generateSessionReport() {
+  if (!focusSession || websiteVisits.size === 0) return;
+  
+  const actualDuration = Math.min(focusSession.duration, Math.floor((Date.now() - focusSession.startTime) / 60000));
+  const totalTrackedTime = Array.from(websiteVisits.values()).reduce((sum, site) => sum + site.totalTime, 0);
+  
+  const report = {
+    sessionId: Date.now(),
+    date: new Date().toISOString(),
+    sessionType: focusSession.sessionType,
+    focusSite: focusSession.focusSite,
+    plannedDuration: focusSession.duration,
+    actualDuration: actualDuration,
+    totalTrackedTime: Math.floor(totalTrackedTime / 60000), // Convert to minutes
+    websiteVisits: Array.from(websiteVisits.values()).map(visit => ({
+      ...visit,
+      totalTime: Math.floor(visit.totalTime / 60000), // Convert to minutes
+      percentage: ((visit.totalTime / totalTrackedTime) * 100).toFixed(1)
+    })).sort((a, b) => b.totalTime - a.totalTime),
+    productivity: calculateProductivityScore(),
+    insights: generateSessionInsights()
+  };
+  
+  sessionReports.unshift(report);
+  
+  // Keep only last 30 reports
+  if (sessionReports.length > 30) {
+    sessionReports = sessionReports.slice(0, 30);
+  }
+  
+  // Save reports
+  chrome.storage.sync.set({ sessionReports: sessionReports });
+  
+  console.log('Session report generated:', report);
+}
+
+function calculateProductivityScore() {
+  let productiveTime = 0;
+  let totalTime = 0;
+  
+  websiteVisits.forEach((visit) => {
+    totalTime += visit.totalTime;
+    if (visit.isRelevant || visit.category === 'educational') {
+      productiveTime += visit.totalTime;
+    }
+  });
+  
+  if (totalTime === 0) return 0;
+  
+  return Math.round((productiveTime / totalTime) * 100);
+}
+
+function generateSessionInsights() {
+  const insights = [];
+  
+  // Most visited site
+  const sortedVisits = Array.from(websiteVisits.values()).sort((a, b) => b.totalTime - a.totalTime);
+  if (sortedVisits.length > 0) {
+    const topSite = sortedVisits[0];
+    insights.push(`Most time spent on ${topSite.hostname} (${Math.floor(topSite.totalTime / 60000)} minutes)`);
+  }
+  
+  // Productivity insight
+  const productivityScore = calculateProductivityScore();
+  if (productivityScore >= 80) {
+    insights.push('Excellent focus! Very productive session. 🎯');
+  } else if (productivityScore >= 60) {
+    insights.push('Good focus session with room for improvement. 💪');
+  } else {
+    insights.push('Consider blocking more distracting sites for better focus. 📚');
+  }
+  
+  // Category breakdown
+  const categoryTime = {};
+  websiteVisits.forEach((visit) => {
+    if (!categoryTime[visit.category]) {
+      categoryTime[visit.category] = 0;
+    }
+    categoryTime[visit.category] += visit.totalTime;
+  });
+  
+  const topCategory = Object.keys(categoryTime).reduce((a, b) => 
+    categoryTime[a] > categoryTime[b] ? a : b
+  );
+  
+  insights.push(`Primary activity: ${topCategory} websites`);
+  
+  return insights;
 }
