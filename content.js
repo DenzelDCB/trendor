@@ -17,6 +17,10 @@ let motivationalQuotes = [
   "Stay disciplined, stay focused. 🎓",
   "Success is the sum of small efforts. ✨"
 ];
+let pageStartTime = Date.now();
+let pageVisibilityTimer = null;
+let isVisible = true;
+let totalPageTime = 0;
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -683,16 +687,90 @@ document.head.appendChild(shakeStyle);
 // Initialize monitoring when page loads
 document.addEventListener('DOMContentLoaded', () => {
   setupMonitoring();
+  setupPageTracking();
 });
 
 // Also check on navigation
 window.addEventListener('beforeunload', () => {
   removeOverlay();
+  sendPageTimeData();
 });
 
 window.addEventListener('load', () => {
   setupMonitoring();
 });
+
+// Page visibility tracking
+function setupPageTracking() {
+  // Track page visibility changes
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      // Page is hidden, pause tracking
+      if (isVisible) {
+        isVisible = false;
+        totalPageTime += Date.now() - pageStartTime;
+        pageStartTime = Date.now();
+      }
+    } else {
+      // Page is visible, resume tracking
+      if (!isVisible) {
+        isVisible = true;
+        pageStartTime = Date.now();
+      }
+    }
+  });
+  
+  // Track page focus/blur
+  window.addEventListener('blur', () => {
+    if (isVisible) {
+      totalPageTime += Date.now() - pageStartTime;
+      pageStartTime = Date.now();
+    }
+  });
+  
+  window.addEventListener('focus', () => {
+    pageStartTime = Date.now();
+  });
+  
+  // Send periodic updates to background
+  setInterval(() => {
+    if (isVisible) {
+      const currentTime = Date.now() - pageStartTime;
+      sendPageTimeUpdate(currentTime);
+    }
+  }, 10000); // Every 10 seconds
+}
+
+function sendPageTimeData() {
+  const totalTime = isVisible ? totalPageTime + (Date.now() - pageStartTime) : totalPageTime;
+  
+  chrome.runtime.sendMessage({
+    action: 'updatePageTime',
+    data: {
+      url: window.location.href,
+      hostname: window.location.hostname,
+      totalTime: totalTime,
+      timestamp: Date.now()
+    }
+  }).catch(error => {
+    // Ignore errors if extension context is invalid
+  });
+}
+
+function sendPageTimeUpdate(currentTime) {
+  chrome.runtime.sendMessage({
+    action: 'updatePageTime',
+    data: {
+      url: window.location.href,
+      hostname: window.location.hostname,
+      totalTime: totalPageTime + currentTime,
+      timestamp: Date.now(),
+      isUpdate: true
+    }
+  }).catch(error => {
+    // Ignore errors if extension context is invalid
+  });
+}
 
 // Performance optimization - debounce rapid URL changes
 let debounceTimer;
