@@ -23,7 +23,7 @@
     }
   ],
   "action": {
-    "default_popup": "solution.html",
+    "default_popup": "popup.html",
     "default_title": "Student Focus Helper"
   },
   "icons": {
