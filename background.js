@@ -68,72 +68,75 @@ async function loadStoredData() {
 
 // Setup alarms
 function setupAlarms() {
-  chrome.alarms.onAlarm.addListener((alarm) => {
-    switch (alarm.name) {
-      case 'focusSessionEnd':
+  if (chrome.alarms) {
+    chrome.alarms.onAlarm.addListener((alarm) => {
+      if (alarm.name === 'focusSessionEnd') {
         endFocusSession();
-        showSessionCompleteNotification();
-        break;
-      case 'breakEnd':
-        handleBreakEnd();
-        break;
-      case 'scheduledSession':
-        startScheduledSession(alarm.scheduledSessionData);
-        break;
-      case 'dailyReset':
+      } else if (alarm.name === 'scheduledSession') {
+        startScheduledSession(alarm.scheduledTime);
+      } else if (alarm.name === 'dailyReset') {
         resetDailyStats();
-        break;
-      case 'weeklyReset':
+      } else if (alarm.name === 'weeklyReset') {
         resetWeeklyStats();
-        break;
-    }
-  });
-  
-  // Setup periodic alarms
-  chrome.alarms.create('dailyReset', {
-    periodInMinutes: 24 * 60, // Daily
-    scheduledTime: getNextMidnight()
-  });
-  
-  chrome.alarms.create('weeklyReset', {
-    periodInMinutes: 7 * 24 * 60, // Weekly
-    scheduledTime: getNextSunday()
-  });
+      }
+    });
+    
+    // Setup periodic alarms
+    chrome.alarms.create('dailyReset', {
+      periodInMinutes: 24 * 60, // Daily
+      scheduledTime: getNextMidnight()
+    });
+    
+    chrome.alarms.create('weeklyReset', {
+      periodInMinutes: 7 * 24 * 60, // Weekly
+      scheduledTime: getNextSunday()
+    });
+  }
 }
 
 // Setup context menus
 function setupContextMenus() {
-  chrome.contextMenus.create({
-    id: 'startFocus',
-    title: 'Start Focus Session',
-    contexts: ['page']
-  });
-  
-  chrome.contextMenus.create({
-    id: 'blockSite',
-    title: 'Block This Site',
-    contexts: ['page']
-  });
-  
-  chrome.contextMenus.create({
-    id: 'allowSite',
-    title: 'Allow This Site',
-    contexts: ['page']
-  });
-  
-  chrome.contextMenus.onClicked.addListener((info, tab) => {
-    switch (info.menuItemId) {
-      case 'startFocus':
-        startQuickFocusSession(tab.url);
-        break;
-      case 'blockSite':
-        blockCurrentSite(tab.url);
-        break;
-      case 'allowSite':
-        allowCurrentSite(tab.url);
-        break;
-    }
-  });
+  if (chrome.contextMenus) {
+    chrome.contextMenus.create({
+      id: 'startFocus',
+      title: 'Start Focus Session',
+      contexts: ['page']
+    });
+    
+    chrome.contextMenus.create({
+      id: 'blockSite',
+      title: 'Block Current Site',
+      contexts: ['page']
+    });
+    
+    chrome.contextMenus.create({
+      id: 'allowSite',
+      title: 'Allow Current Site',
+      contexts: ['page']
+    });
+    
+    chrome.contextMenus.onClicked.addListener((info, tab) => {
+      if (info.menuItemId === 'startFocus') {
+        // Quick start focus session for current site
+        const hostname = new URL(tab.url).hostname;
+        startFocusSession({
+          focusSite: hostname,
+          duration: 25,
+          sessionType: 'study'
+        });
+      } else if (info.menuItemId === 'blockSite') {
+        // Block current site
+        const hostname = new URL(tab.url).hostname;
+        blockedSites.add(hostname);
+        chrome.storage.sync.set({ blockedSites: Array.from(blockedSites) });
+      } else if (info.menuItemId === 'allowSite') {
+        // Allow current site
+        const hostname = new URL(tab.url).hostname;
+        blockedSites.delete(hostname);
+        chrome.storage.sync.set({ blockedSites: Array.from(blockedSites) });
+      }
+    });
+  }
 }
 
 // Initialize analytics
@@ -724,9 +727,11 @@ async function startFocusSession(data) {
   startSessionTracking();
 
   // Set alarm for session end
-  chrome.alarms.create('focusSessionEnd', {
-    scheduledTime: focusSession.endTime
-  });
+  if (chrome.alarms) {
+    chrome.alarms.create('focusSessionEnd', {
+      scheduledTime: focusSession.endTime
+    });
+  }
 
   // Check all current tabs
   const tabs = await chrome.tabs.query({});
@@ -785,7 +790,9 @@ async function endFocusSession() {
     await chrome.storage.sync.set({ focusSession: null });
     
     // Clear alarm
-    chrome.alarms.clear('focusSessionEnd');
+    if (chrome.alarms) {
+      chrome.alarms.clear('focusSessionEnd');
+    }
     
     // Notify all tabs
     const tabs = await chrome.tabs.query({});
@@ -868,13 +875,24 @@ function trackEvent(eventName, data) {
   // Can be enhanced to send to analytics service
 }
 
+// Show notification
+function showNotification(title, message, options = {}) {
+  if (chrome.notifications) {
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon48.png',
+      title: title,
+      message: message,
+      ...options
+    }).catch(error => {
+      console.warn('Failed to show notification:', error);
+    });
+  }
+}
+
 // Enhanced notifications
 function showSessionCompleteNotification() {
-  chrome.notifications.create({
-    type: 'basic',
-    iconUrl: 'icons/icon48.png',
-    title: 'Focus Session Complete! 🎉',
-    message: 'Great job! You completed your focus session. Take a well-deserved break!',
+  showNotification('Focus Session Complete! 🎉', 'Great job! You completed your focus session. Take a well-deserved break!', {
     buttons: [
       { title: 'Start New Session' },
       { title: 'View Stats' }
@@ -902,9 +920,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (focusSession) {
           focusSession.endTime += message.extension;
           focusSession.duration += Math.floor(message.extension / 60000);
-          chrome.alarms.create('focusSessionEnd', {
-            scheduledTime: focusSession.endTime
-          });
+          if (chrome.alarms) {
+            chrome.alarms.create('focusSessionEnd', {
+              scheduledTime: focusSession.endTime
+            });
+          }
         }
         sendResponse({ success: true });
         break;
@@ -936,6 +956,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
       case 'deleteSessionReport':
         sessionReports = sessionReports.filter(r => r.sessionId !== message.sessionId);
+        chrome.storage.sync.set({ sessionReports: sessionReports });
+        sendResponse({ success: true });
+        break;
+      case 'clearAllReports':
+        sessionReports = [];
         chrome.storage.sync.set({ sessionReports: sessionReports });
         sendResponse({ success: true });
         break;
