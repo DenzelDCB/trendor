@@ -19,6 +19,7 @@
                 <nav class="tab-navigation">
                     <button class="tab-btn active" data-tab="focus">Focus</button>
                     <button class="tab-btn" data-tab="analytics">Analytics</button>
+                    <button class="tab-btn" data-tab="reports">Reports</button>
                     <button class="tab-btn" data-tab="schedule">Schedule</button>
                     <button class="tab-btn" data-tab="settings">Settings</button>
                 </nav>
@@ -222,6 +223,39 @@ stackoverflow.com"></textarea>
                         </div>
                     </div>
                 </section>
+            </div>
+
+            <!-- Reports Tab -->
+            <div class="tab-content" id="reports-tab">
+                <section class="reports-overview">
+                    <h2>Session Reports</h2>
+                    <div class="reports-controls">
+                        <button class="btn btn-secondary" id="refresh-reports">🔄 Refresh</button>
+                        <button class="btn btn-primary" id="export-reports">📊 Export All</button>
+                        <button class="btn btn-danger" id="clear-reports">🗑️ Clear All</button>
+                    </div>
+                </section>
+
+                <section class="reports-list" id="reports-list">
+                    <div class="report-placeholder">
+                        <div class="placeholder-icon">📈</div>
+                        <p>No session reports available yet.</p>
+                        <p>Complete a focus session to see detailed reports here.</p>
+                    </div>
+                </section>
+
+                <!-- Report Detail Modal -->
+                <div class="report-modal" id="report-modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Session Report</h3>
+                            <button class="modal-close" id="close-modal">×</button>
+                        </div>
+                        <div class="modal-body" id="report-detail">
+                            <!-- Report details will be inserted here -->
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Schedule Tab -->
