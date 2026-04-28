@@ -1073,10 +1073,14 @@ async function clearAllReports() {
   if (!confirm('Are you sure you want to clear all reports? This action cannot be undone.')) return;
   
   try {
-    await sendMessage({ action: 'clearAllReports' });
-    sessionReports = [];
-    displayReports();
-    showSuccess('All reports cleared successfully');
+    const response = await sendMessage({ action: 'clearAllReports' });
+    if (response && response.success) {
+      sessionReports = [];
+      displayReports();
+      showSuccess('All reports cleared successfully');
+    } else {
+      showError('Failed to clear reports');
+    }
   } catch (error) {
     console.error('Error clearing reports:', error);
     showError('Failed to clear reports');
