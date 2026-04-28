@@ -46,7 +46,7 @@
 
 body {
   font-family: var(--font-family);
-  width: 480px;
+  width: 580px;
   min-height: 600px;
   background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
   color: var(--text-primary);
