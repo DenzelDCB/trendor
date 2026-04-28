@@ -6,6 +6,7 @@ let isPaused = false;
 let currentTab = 'focus';
 let analyticsData = null;
 let scheduleData = null;
+let sessionReports = [];
 
 // Initialize popup when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
@@ -71,6 +72,8 @@ function setupTabNavigation() {
       // Load tab-specific data
       if (targetTab === 'analytics') {
         updateAnalyticsDisplay();
+      } else if (targetTab === 'reports') {
+        loadSessionReports();
       } else if (targetTab === 'schedule') {
         updateScheduleDisplay();
       }
@@ -125,6 +128,12 @@ function setupEventListeners() {
   // Footer actions
   document.getElementById('help-btn').addEventListener('click', showHelp);
   document.getElementById('feedback-btn').addEventListener('click', showFeedback);
+  
+  // Report controls
+  document.getElementById('refresh-reports').addEventListener('click', loadSessionReports);
+  document.getElementById('export-reports').addEventListener('click', exportAllReports);
+  document.getElementById('clear-reports').addEventListener('click', clearAllReports);
+  document.getElementById('close-modal').addEventListener('click', closeReportModal);
   
   // Input validation
   document.getElementById('focus-site').addEventListener('input', validateFocusSite);
@@ -860,6 +869,241 @@ function sendMessage(message) {
       reject(error);
     }
   });
+}
+
+// Report functions
+async function loadSessionReports() {
+  try {
+    if (!chrome || !chrome.runtime) {
+      console.log('Chrome runtime API not available');
+      return;
+    }
+    
+    const reports = await sendMessage({ action: 'getSessionReports' });
+    sessionReports = reports || [];
+    displayReports();
+  } catch (error) {
+    console.error('Error loading session reports:', error);
+  }
+}
+
+function displayReports() {
+  const reportsList = document.getElementById('reports-list');
+  
+  if (sessionReports.length === 0) {
+    reportsList.innerHTML = `
+      <div class="report-placeholder">
+        <div class="placeholder-icon">📈</div>
+        <p>No session reports available yet.</p>
+        <p>Complete a focus session to see detailed reports here.</p>
+      </div>
+    `;
+    return;
+  }
+  
+  reportsList.innerHTML = sessionReports.map(report => `
+    <div class="report-card" data-session-id="${report.sessionId}">
+      <div class="report-header">
+        <div class="report-title">
+          <h4>${getSessionTypeLabel(report.sessionType)} Session</h4>
+          <span class="report-date">${formatDate(report.date)}</span>
+        </div>
+        <div class="report-score">
+          <div class="productivity-score ${getProductivityClass(report.productivity)}">
+            ${report.productivity}% Productive
+          </div>
+        </div>
+      </div>
+      <div class="report-summary">
+        <div class="summary-item">
+          <span class="label">Duration:</span>
+          <span class="value">${report.actualDuration} min</span>
+        </div>
+        <div class="summary-item">
+          <span class="label">Focus Site:</span>
+          <span class="value">${report.focusSite}</span>
+        </div>
+        <div class="summary-item">
+          <span class="label">Sites Visited:</span>
+          <span class="value">${report.websiteVisits.length}</span>
+        </div>
+      </div>
+      <div class="report-actions">
+        <button class="btn btn-small btn-primary view-report" data-session-id="${report.sessionId}">
+          View Details
+        </button>
+        <button class="btn btn-small btn-danger delete-report" data-session-id="${report.sessionId}">
+          Delete
+        </button>
+      </div>
+    </div>
+  `).join('');
+  
+  // Add event listeners to report cards
+  document.querySelectorAll('.view-report').forEach(btn => {
+    btn.addEventListener('click', () => viewReport(btn.dataset.sessionId));
+  });
+  
+  document.querySelectorAll('.delete-report').forEach(btn => {
+    btn.addEventListener('click', () => deleteReport(btn.dataset.sessionId));
+  });
+}
+
+function viewReport(sessionId) {
+  const report = sessionReports.find(r => r.sessionId == sessionId);
+  if (!report) return;
+  
+  const modal = document.getElementById('report-modal');
+  const modalBody = document.getElementById('report-detail');
+  
+  modalBody.innerHTML = `
+    <div class="report-overview">
+      <h4>Session Overview</h4>
+      <div class="overview-grid">
+        <div class="overview-item">
+          <span class="label">Session Type:</span>
+          <span class="value">${getSessionTypeLabel(report.sessionType)}</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">Date:</span>
+          <span class="value">${formatDate(report.date)}</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">Focus Site:</span>
+          <span class="value">${report.focusSite}</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">Planned Duration:</span>
+          <span class="value">${report.plannedDuration} minutes</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">Actual Duration:</span>
+          <span class="value">${report.actualDuration} minutes</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">Tracked Time:</span>
+          <span class="value">${report.totalTrackedTime} minutes</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">Productivity Score:</span>
+          <span class="value productivity-score ${getProductivityClass(report.productivity)}">
+            ${report.productivity}%
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="website-analysis">
+      <h4>Website Analysis</h4>
+      <div class="website-list">
+        ${report.websiteVisits.map(site => `
+          <div class="website-item ${site.isRelevant ? 'relevant' : 'irrelevant'}">
+            <div class="website-info">
+              <div class="website-name">${site.hostname}</div>
+              <div class="website-category">${site.category}</div>
+            </div>
+            <div class="website-stats">
+              <div class="time-spent">${site.totalTime} min</div>
+              <div class="percentage">${site.percentage}%</div>
+              <div class="relevance-badge ${site.isRelevant ? 'relevant' : 'irrelevant'}">
+                ${site.isRelevant ? '✓ Relevant' : '✗ Irrelevant'}
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    
+    <div class="insights">
+      <h4>Session Insights</h4>
+      <div class="insights-list">
+        ${report.insights.map(insight => `
+          <div class="insight-item">${insight}</div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  
+  modal.classList.add('active');
+}
+
+function closeReportModal() {
+  const modal = document.getElementById('report-modal');
+  modal.classList.remove('active');
+}
+
+async function deleteReport(sessionId) {
+  if (!confirm('Are you sure you want to delete this report?')) return;
+  
+  try {
+    await sendMessage({ action: 'deleteSessionReport', sessionId: sessionId });
+    sessionReports = sessionReports.filter(r => r.sessionId != sessionId);
+    displayReports();
+    showSuccess('Report deleted successfully');
+  } catch (error) {
+    console.error('Error deleting report:', error);
+    showError('Failed to delete report');
+  }
+}
+
+async function exportAllReports() {
+  try {
+    const data = {
+      reports: sessionReports,
+      exportDate: new Date().toISOString(),
+      version: '2.0'
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `focus-helper-reports-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    showSuccess('Reports exported successfully');
+  } catch (error) {
+    console.error('Error exporting reports:', error);
+    showError('Failed to export reports');
+  }
+}
+
+async function clearAllReports() {
+  if (!confirm('Are you sure you want to clear all reports? This action cannot be undone.')) return;
+  
+  try {
+    await sendMessage({ action: 'clearAllReports' });
+    sessionReports = [];
+    displayReports();
+    showSuccess('All reports cleared successfully');
+  } catch (error) {
+    console.error('Error clearing reports:', error);
+    showError('Failed to clear reports');
+  }
+}
+
+// Helper functions for reports
+function getSessionTypeLabel(type) {
+  const labels = {
+    study: '📚 Study',
+    work: '💼 Work',
+    reading: '📖 Reading',
+    coding: '💻 Coding',
+    creative: '🎨 Creative'
+  };
+  return labels[type] || '📚 Study';
+}
+
+function formatDate(dateString) {
+  const date = new Date(dateString);
+  return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function getProductivityClass(score) {
+  if (score >= 80) return 'excellent';
+  if (score >= 60) return 'good';
+  return 'needs-improvement';
 }
 
 // Add CSS animations
