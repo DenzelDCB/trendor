@@ -40,15 +40,36 @@ function monitorUrlChanges() {
   }
 }
 
-// Check current URL against focus session
+// Check current URL against focus session and permanent blocklist
 function checkCurrentUrl() {
-  chrome.runtime.sendMessage({ action: 'getFocusSession' }, (response) => {
-    if (response && response.isActive) {
-      const hostname = window.location.hostname;
+  chrome.runtime.sendMessage({ action: 'getFocusSession' }, (sessionResponse) => {
+    chrome.runtime.sendMessage({ action: 'getBlocklist' }, (blocklistResponse) => {
+      const permanentBlocklist = blocklistResponse?.permanentBlocklist || [];
+      const hostname = window.location.hostname.toLowerCase();
       const currentUrl = window.location.href;
       
+      // Check permanent blocklist first
+      if (permanentBlocklist.some(blocked => hostname.includes(blocked))) {
+        if (!isBlocked) {
+          createBlockOverlay(hostname);
+          isBlocked = true;
+          lastBlockedUrl = currentUrl;
+          removeFocusModeIndicator();
+        }
+        return;
+      }
+      
+      if (!sessionResponse || !sessionResponse.isActive) {
+        if (isBlocked) {
+          removeOverlay();
+          isBlocked = false;
+        }
+        removeFocusModeIndicator();
+        return;
+      }
+      
       // Check if this is focus site or allowed site
-      if (hostname.includes(response.focusSite)) {
+      if (hostname.includes(sessionResponse.focusSite)) {
         if (isBlocked) {
           removeOverlay();
           isBlocked = false;
@@ -57,8 +78,8 @@ function checkCurrentUrl() {
         return;
       }
       
-      if (response.allowedSites) {
-        for (let allowed of response.allowedSites) {
+      if (sessionResponse.allowedSites) {
+        for (let allowed of sessionResponse.allowedSites) {
           if (hostname.includes(allowed)) {
             if (isBlocked) {
               removeOverlay();
@@ -78,13 +99,7 @@ function checkCurrentUrl() {
         // Hide focus mode indicator when site is blocked
         removeFocusModeIndicator();
       } 
-    } else {
-      if (isBlocked) {
-        removeOverlay();
-        isBlocked = false;
-      }
-      removeFocusModeIndicator();
-    }
+    });
   });
 }
 
@@ -375,17 +390,28 @@ window.addEventListener('load', () => {
 
 // Check if current site should be blocked
 function checkIfShouldBlock() {
-  chrome.runtime.sendMessage({ action: 'getFocusSession' }, (response) => {
-    if (response && response.isActive) {
-      const hostname = window.location.hostname;
+  chrome.runtime.sendMessage({ action: 'getFocusSession' }, (sessionResponse) => {
+    chrome.runtime.sendMessage({ action: 'getBlocklist' }, (blocklistResponse) => {
+      const permanentBlocklist = blocklistResponse?.permanentBlocklist || [];
+      const hostname = window.location.hostname.toLowerCase();
+      
+      // Check permanent blocklist first
+      if (permanentBlocklist.some(blocked => hostname.includes(blocked))) {
+        createBlockOverlay(hostname);
+        return;
+      }
+      
+      if (!sessionResponse || !sessionResponse.isActive) {
+        return; // No session and not in permanent blocklist
+      }
       
       // Check if this is the focus site or allowed site
-      if (hostname.includes(response.focusSite)) {
+      if (hostname.includes(sessionResponse.focusSite)) {
         return; // This is the focus site, don't block
       }
       
-      if (response.allowedSites) {
-        for (let allowed of response.allowedSites) {
+      if (sessionResponse.allowedSites) {
+        for (let allowed of sessionResponse.allowedSites) {
           if (hostname.includes(allowed)) {
             return; // This is an allowed site
           }
@@ -394,7 +420,7 @@ function checkIfShouldBlock() {
       
       // This site should be blocked
       createBlockOverlay(hostname);
-    }
+    });
   });
 }
 
