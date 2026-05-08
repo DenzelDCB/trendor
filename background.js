@@ -3,17 +3,38 @@
 let focusSession = null;
 let focusTimer = null;
 let blockedSites = new Set();
+let permanentBlocklist = [];
 
 // Initialize extension
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Student Focus Helper installed');
   loadStoredData();
+  loadPermanentBlocklist();
+});
+
+// Load permanent blocklist from storage
+async function loadPermanentBlocklist() {
+  try {
+    const result = await chrome.storage.sync.get(['permanentBlocklist']);
+    permanentBlocklist = result.permanentBlocklist || [];
+  } catch (error) {
+    console.error('Error loading permanent blocklist:', error);
+    permanentBlocklist = [];
+  }
+}
+
+// Listen for blocklist changes
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'sync' && changes.permanentBlocklist) {
+    permanentBlocklist = changes.permanentBlocklist.newValue || [];
+    console.log('Permanent blocklist updated:', permanentBlocklist);
+  }
 });
 
 // Load stored data from chrome.storage
 async function loadStoredData() {
   try {
-    const result = await chrome.storage.sync.get(['focusSession', 'blockedSites', 'statistics']);
+    const result = await chrome.storage.sync.get(['focusSession', 'blockedSites', 'statistics', 'permanentBlocklist']);
     if (result.focusSession) {
       focusSession = result.focusSession;
       if (focusSession.isActive) {
@@ -129,6 +150,19 @@ setInterval(() => {
 
 // Check if a site should be blocked and block it if necessary
 function checkAndBlockSite(tabId, url) {
+  // Check permanent blocklist first
+  try {
+    const hostname = new URL(url).hostname;
+    const lowerHostname = hostname.toLowerCase();
+    
+    if (permanentBlocklist.some(blocked => lowerHostname.includes(blocked))) {
+      blockSite(tabId, hostname);
+      return;
+    }
+  } catch (error) {
+    console.error('Error checking permanent blocklist:', error);
+  }
+  
   if (!focusSession || !focusSession.isActive) {
     return;
   }
@@ -601,6 +635,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         break;
       case 'getFocusSession':
         sendResponse(focusSession);
+        return true; // Keep message channel open for async response
+      case 'getBlocklist':
+        sendResponse({ permanentBlocklist: permanentBlocklist });
         return true; // Keep message channel open for async response
       case 'temporarilyUnblock':
         temporarilyUnblockSite(message.site);
