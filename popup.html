@@ -365,6 +365,17 @@ stackoverflow.com"></textarea>
                     </div>
 
                     <div class="settings-group">
+                        <h3>Permanent Blocklist</h3>
+                        <p style="font-size: 13px; color: #666; margin-bottom: 10px;">Sites blocked even without an active focus session</p>
+                        <div class="setting-item">
+                            <label for="blocklist-sites">Blocked Sites:</label>
+                            <textarea id="blocklist-sites" placeholder="Enter sites to permanently block (one per line)&#10;e.g.,&#10;facebook.com&#10;twitter.com&#10;reddit.com" style="min-height: 100px; font-family: monospace; font-size: 12px;"></textarea>
+                        </div>
+                        <button id="save-blocklist" class="btn btn-secondary">Save Blocklist</button>
+                        <div id="blocklist-status" class="hidden" style="margin-top: 10px; padding: 8px; border-radius: 4px; text-align: center; font-size: 13px;"></div>
+                    </div>
+
+                    <div class="settings-group">
                         <h3>Data & Privacy</h3>
                         <div class="setting-item">
                             <button class="btn btn-secondary" id="export-data">Export Data</button>
