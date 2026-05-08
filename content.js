@@ -54,50 +54,64 @@ function monitorUrlChanges() {
   }
 }
 
-// Check current URL against focus session
+// Check current URL against focus session and permanent blocklist
 function checkCurrentUrl() {
-  chrome.runtime.sendMessage({ action: 'getFocusSession' }, (response) => {
-    if (response && response.isActive && !response.isPaused) {
-      const hostname = window.location.hostname;
+  chrome.runtime.sendMessage({ action: 'getFocusSession' }, (sessionResponse) => {
+    chrome.runtime.sendMessage({ action: 'getBlocklist' }, (blocklistResponse) => {
+      const permanentBlocklist = blocklistResponse?.permanentBlocklist || [];
+      const hostname = window.location.hostname.toLowerCase();
       const currentUrl = window.location.href;
       
-      // Check if this is focus site or allowed site
-      if (hostname.includes(response.focusSite)) {
+      // Check permanent blocklist first (works even without active session)
+      if (permanentBlocklist.some(blocked => hostname.includes(blocked))) {
+        if (!isBlocked || lastBlockedUrl !== currentUrl) {
+          createEnhancedBlockOverlay(hostname);
+          isBlocked = true;
+          lastBlockedUrl = currentUrl;
+          removeFocusModeIndicator();
+        }
+        return;
+      }
+      
+      if (sessionResponse && sessionResponse.isActive && !sessionResponse.isPaused) {
+        // Check if this is focus site or allowed site
+        if (hostname.includes(sessionResponse.focusSite)) {
+          if (isBlocked) {
+            removeOverlay();
+            isBlocked = false;
+          }
+          showFocusModeIndicator();
+          return;
+        }
+        
+        if (sessionResponse.allowedSites) {
+          for (let allowed of sessionResponse.allowedSites) {
+            if (hostname.includes(allowed)) {
+              if (isBlocked) {
+                removeOverlay();
+                isBlocked = false;
+              }
+              showFocusModeIndicator();
+              return;
+            }
+          }
+        }
+        
+        // This site should be blocked
+        if (!isBlocked || lastBlockedUrl !== currentUrl) {
+          createEnhancedBlockOverlay(hostname);
+          isBlocked = true;
+          lastBlockedUrl = currentUrl;
+          removeFocusModeIndicator();
+        }
+      } else {
         if (isBlocked) {
           removeOverlay();
           isBlocked = false;
         }
-        showFocusModeIndicator();
-        return;
-      }
-      
-      if (response.allowedSites) {
-        for (let allowed of response.allowedSites) {
-          if (hostname.includes(allowed)) {
-            if (isBlocked) {
-              removeOverlay();
-              isBlocked = false;
-            }
-            showFocusModeIndicator();
-            return;
-          }
-        }
-      }
-      
-      // This site should be blocked
-      if (!isBlocked || lastBlockedUrl !== currentUrl) {
-        createEnhancedBlockOverlay(hostname);
-        isBlocked = true;
-        lastBlockedUrl = currentUrl;
         removeFocusModeIndicator();
       }
-    } else {
-      if (isBlocked) {
-        removeOverlay();
-        isBlocked = false;
-      }
-      removeFocusModeIndicator();
-    }
+    });
   });
 }
 
