@@ -127,7 +127,23 @@ function setupEventListeners() {
   document.getElementById('clear-data').addEventListener('click', clearAllData);
   
   // Blocklist
+  document.getElementById('blocklist-sites').addEventListener('focus', handleBlocklistFocus);
   document.getElementById('save-blocklist').addEventListener('click', saveBlocklist);
+  document.getElementById('blocklist-lock-indicator').addEventListener('click', showBlocklistPasswordModal);
+  document.getElementById('close-password-modal').addEventListener('click', closeBlocklistPasswordModal);
+  document.getElementById('set-password-btn').addEventListener('click', setBlocklistPassword);
+  document.getElementById('verify-password-btn').addEventListener('click', verifyBlocklistPassword);
+  
+  // Allow Enter key in password fields
+  document.getElementById('blocklist-password-new').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') document.getElementById('blocklist-password-confirm').focus();
+  });
+  document.getElementById('blocklist-password-confirm').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') document.getElementById('set-password-btn').click();
+  });
+  document.getElementById('blocklist-password-check').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') document.getElementById('verify-password-btn').click();
+  });
 
   // Footer actions
   document.getElementById('help-btn').addEventListener('click', showHelp);
@@ -514,14 +530,30 @@ async function loadBlocklist() {
       return;
     }
     
-    const result = await chrome.storage.sync.get(['permanentBlocklist']);
+    const result = await chrome.storage.sync.get(['permanentBlocklist', 'blocklistPasswordHash']);
     const blocklist = result.permanentBlocklist || [];
     
     document.getElementById('blocklist-sites').value = blocklist.join('\n');
     
+    // If password is set, keep blocklist locked
+    if (result.blocklistPasswordHash) {
+      lockBlocklist();
+    }
+    
   } catch (error) {
     console.error('Error loading blocklist:', error);
   }
+}
+
+// Lock blocklist for protection
+function lockBlocklist() {
+  const textarea = document.getElementById('blocklist-sites');
+  const saveBtn = document.getElementById('save-blocklist');
+  const lockIndicator = document.getElementById('blocklist-lock-indicator');
+  
+  textarea.disabled = true;
+  saveBtn.disabled = true;
+  lockIndicator.style.display = 'flex';
 }
 
 // Save permanent blocklist to storage
@@ -557,6 +589,154 @@ async function saveBlocklist() {
     console.error('Error saving blocklist:', error);
     showMessage('Failed to save blocklist', 'error');
   }
+}
+
+// Handle blocklist textarea focus - trigger password check
+function handleBlocklistFocus(e) {
+  const textarea = document.getElementById('blocklist-sites');
+  if (textarea.disabled) {
+    e.preventDefault();
+    showBlocklistPasswordModal();
+  }
+}
+
+// Show blocklist password modal
+async function showBlocklistPasswordModal() {
+  const modal = document.getElementById('blocklist-password-modal');
+  const newSection = document.getElementById('password-new-section');
+  const checkSection = document.getElementById('password-check-section');
+  
+  // Check if password is already set
+  try {
+    const result = await chrome.storage.sync.get(['blocklistPasswordHash']);
+    const passwordSet = !!result.blocklistPasswordHash;
+    
+    if (passwordSet) {
+      newSection.classList.add('hidden');
+      checkSection.classList.remove('hidden');
+      document.getElementById('blocklist-password-check').value = '';
+      document.getElementById('password-check-error').classList.add('hidden');
+    } else {
+      newSection.classList.remove('hidden');
+      checkSection.classList.add('hidden');
+      document.getElementById('blocklist-password-new').value = '';
+      document.getElementById('blocklist-password-confirm').value = '';
+      document.getElementById('password-error').classList.add('hidden');
+    }
+    
+    modal.classList.add('active');
+    document.getElementById('blocklist-password-new').focus();
+    
+  } catch (error) {
+    console.error('Error checking password:', error);
+  }
+}
+
+// Close blocklist password modal
+function closeBlocklistPasswordModal() {
+  const modal = document.getElementById('blocklist-password-modal');
+  modal.classList.remove('active');
+  document.getElementById('blocklist-password-new').value = '';
+  document.getElementById('blocklist-password-confirm').value = '';
+  document.getElementById('blocklist-password-check').value = '';
+  document.getElementById('password-error').classList.add('hidden');
+  document.getElementById('password-check-error').classList.add('hidden');
+}
+
+// Hash password (simple client-side hash for storage)
+function hashPassword(password) {
+  let hash = 0;
+  for (let i = 0; i < password.length; i++) {
+    const char = password.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16);
+}
+
+// Set new blocklist password
+async function setBlocklistPassword() {
+  const newPassword = document.getElementById('blocklist-password-new').value;
+  const confirmPassword = document.getElementById('blocklist-password-confirm').value;
+  const errorDiv = document.getElementById('password-error');
+  
+  // Validation
+  if (!newPassword || !confirmPassword) {
+    errorDiv.textContent = 'Please enter both password fields';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+  
+  if (newPassword.length < 4) {
+    errorDiv.textContent = 'Password must be at least 4 characters';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+  
+  if (newPassword !== confirmPassword) {
+    errorDiv.textContent = 'Passwords do not match';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+  
+  try {
+    const passwordHash = hashPassword(newPassword);
+    await chrome.storage.sync.set({ blocklistPasswordHash: passwordHash });
+    
+    // Unlock blocklist
+    unlockBlocklist();
+    closeBlocklistPasswordModal();
+    showMessage('Password set successfully!', 'success');
+    
+  } catch (error) {
+    console.error('Error setting password:', error);
+    errorDiv.textContent = 'Failed to set password';
+    errorDiv.classList.remove('hidden');
+  }
+}
+
+// Verify blocklist password
+async function verifyBlocklistPassword() {
+  const enteredPassword = document.getElementById('blocklist-password-check').value;
+  const errorDiv = document.getElementById('password-check-error');
+  
+  if (!enteredPassword) {
+    errorDiv.textContent = 'Please enter your password';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+  
+  try {
+    const result = await chrome.storage.sync.get(['blocklistPasswordHash']);
+    const storedHash = result.blocklistPasswordHash;
+    const enteredHash = hashPassword(enteredPassword);
+    
+    if (enteredHash === storedHash) {
+      unlockBlocklist();
+      closeBlocklistPasswordModal();
+      showMessage('Blocklist unlocked!', 'success');
+    } else {
+      errorDiv.textContent = 'Incorrect password';
+      errorDiv.classList.remove('hidden');
+    }
+    
+  } catch (error) {
+    console.error('Error verifying password:', error);
+    errorDiv.textContent = 'Failed to verify password';
+    errorDiv.classList.remove('hidden');
+  }
+}
+
+// Unlock blocklist for editing
+function unlockBlocklist() {
+  const textarea = document.getElementById('blocklist-sites');
+  const saveBtn = document.getElementById('save-blocklist');
+  const lockIndicator = document.getElementById('blocklist-lock-indicator');
+  
+  textarea.disabled = false;
+  saveBtn.disabled = false;
+  lockIndicator.style.display = 'none';
+  textarea.focus();
 }
 
 // Load statistics from storage
