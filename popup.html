@@ -367,12 +367,49 @@ stackoverflow.com"></textarea>
                     <div class="settings-group">
                         <h3>Permanent Blocklist</h3>
                         <p style="font-size: 13px; color: #666; margin-bottom: 10px;">Sites blocked even without an active focus session</p>
+                        <div class="blocklist-lock-indicator" id="blocklist-lock-indicator">
+                            <span style="font-size: 20px; margin-right: 8px;">🔒</span>
+                            <span>Locked - Click to unlock</span>
+                        </div>
                         <div class="setting-item">
                             <label for="blocklist-sites">Blocked Sites:</label>
-                            <textarea id="blocklist-sites" placeholder="Enter sites to permanently block (one per line)&#10;e.g.,&#10;facebook.com&#10;twitter.com&#10;reddit.com" style="min-height: 100px; font-family: monospace; font-size: 12px;"></textarea>
+                            <textarea id="blocklist-sites" placeholder="Enter sites to permanently block (one per line)&#10;e.g.,&#10;facebook.com&#10;twitter.com&#10;reddit.com" style="min-height: 100px; font-family: monospace; font-size: 12px;" disabled></textarea>
                         </div>
-                        <button id="save-blocklist" class="btn btn-secondary">Save Blocklist</button>
+                        <button id="save-blocklist" class="btn btn-secondary" disabled>Save Blocklist</button>
                         <div id="blocklist-status" class="hidden" style="margin-top: 10px; padding: 8px; border-radius: 4px; text-align: center; font-size: 13px;"></div>
+                    </div>
+
+                    <!-- Blocklist Password Modal -->
+                    <div class="blocklist-password-modal" id="blocklist-password-modal">
+                        <div class="modal-overlay"></div>
+                        <div class="password-modal-content">
+                            <div class="password-modal-header">
+                                <h3>Unlock Blocklist</h3>
+                                <button class="modal-close-btn" id="close-password-modal">×</button>
+                            </div>
+                            <div class="password-modal-body">
+                                <div id="password-new-section" class="password-section">
+                                    <p style="margin-bottom: 15px;">Set a password to protect your blocklist:</p>
+                                    <div class="password-input-group">
+                                        <label for="blocklist-password-new">Create Password:</label>
+                                        <input type="password" id="blocklist-password-new" placeholder="Enter a secure password" style="margin-bottom: 10px;">
+                                        <label for="blocklist-password-confirm">Confirm Password:</label>
+                                        <input type="password" id="blocklist-password-confirm" placeholder="Confirm password">
+                                    </div>
+                                    <div id="password-error" class="hidden" style="color: #dc3545; margin-top: 10px; font-size: 13px;"></div>
+                                    <button id="set-password-btn" class="btn btn-primary" style="margin-top: 15px; width: 100%;">Set Password</button>
+                                </div>
+                                <div id="password-check-section" class="password-section hidden">
+                                    <p style="margin-bottom: 15px;">Enter your password to unlock:</p>
+                                    <div class="password-input-group">
+                                        <label for="blocklist-password-check">Password:</label>
+                                        <input type="password" id="blocklist-password-check" placeholder="Enter password">
+                                    </div>
+                                    <div id="password-check-error" class="hidden" style="color: #dc3545; margin-top: 10px; font-size: 13px;"></div>
+                                    <button id="verify-password-btn" class="btn btn-primary" style="margin-top: 15px; width: 100%;">Unlock</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="settings-group">
@@ -397,6 +434,156 @@ stackoverflow.com"></textarea>
             </div>
         </footer>
     </div>
+
+    <style>
+      .blocklist-lock-indicator {
+        background: #fff3cd;
+        border: 2px solid #ffc107;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        font-size: 14px;
+        color: #856404;
+        transition: all 0.3s ease;
+      }
+      
+      .blocklist-lock-indicator:hover {
+        background: #ffe69c;
+        border-color: #ffb600;
+      }
+
+      .blocklist-password-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: none;
+        z-index: 10000;
+      }
+      
+      .blocklist-password-modal.active {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      
+      .blocklist-password-modal .modal-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1;
+      }
+      
+      .password-modal-content {
+        position: relative;
+        background: white;
+        border-radius: 12px;
+        width: 90%;
+        max-width: 400px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        z-index: 2;
+        animation: slideIn 0.3s ease;
+      }
+      
+      @keyframes slideIn {
+        from {
+          transform: translateY(-50px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+      
+      .password-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        border-bottom: 1px solid #e0e0e0;
+      }
+      
+      .password-modal-header h3 {
+        margin: 0;
+        font-size: 18px;
+        color: #333;
+      }
+      
+      .modal-close-btn {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #999;
+        padding: 0;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        transition: all 0.2s;
+      }
+      
+      .modal-close-btn:hover {
+        background: #f0f0f0;
+        color: #333;
+      }
+      
+      .password-modal-body {
+        padding: 20px;
+      }
+      
+      .password-section {
+        display: none;
+      }
+      
+      .password-section:not(.hidden) {
+        display: block;
+      }
+      
+      .password-input-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      
+      .password-input-group label {
+        font-size: 13px;
+        font-weight: 500;
+        color: #333;
+        margin-top: 8px;
+      }
+      
+      .password-input-group input {
+        padding: 10px 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: all 0.2s;
+      }
+      
+      .password-input-group input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      #blocklist-sites:disabled {
+        background-color: #f5f5f5;
+        color: #999;
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+    </style>
 
     <script src="popup.js"></script>
 </body>
