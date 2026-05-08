@@ -12,6 +12,7 @@ let sessionReports = [];
 document.addEventListener('DOMContentLoaded', () => {
   initializePopup();
   loadSettings();
+  loadBlocklist();
   loadStatistics();
   loadSchedule();
   setupEventListeners();
@@ -125,6 +126,9 @@ function setupEventListeners() {
   document.getElementById('export-data').addEventListener('click', exportData);
   document.getElementById('clear-data').addEventListener('click', clearAllData);
   
+  // Blocklist
+  document.getElementById('save-blocklist').addEventListener('click', saveBlocklist);
+
   // Footer actions
   document.getElementById('help-btn').addEventListener('click', showHelp);
   document.getElementById('feedback-btn').addEventListener('click', showFeedback);
@@ -500,6 +504,59 @@ function applyTheme(theme, accentColor) {
   
   // Update accent color
   document.documentElement.style.setProperty('--accent-color', accentColor);
+}
+
+// Load permanent blocklist from storage
+async function loadBlocklist() {
+  try {
+    if (!chrome || !chrome.storage) {
+      console.log('Chrome storage API not available, using default blocklist');
+      return;
+    }
+    
+    const result = await chrome.storage.sync.get(['permanentBlocklist']);
+    const blocklist = result.permanentBlocklist || [];
+    
+    document.getElementById('blocklist-sites').value = blocklist.join('\n');
+    
+  } catch (error) {
+    console.error('Error loading blocklist:', error);
+  }
+}
+
+// Save permanent blocklist to storage
+async function saveBlocklist() {
+  try {
+    if (!chrome || !chrome.storage) {
+      console.log('Chrome storage API not available, blocklist not saved');
+      showMessage('Chrome storage API not available', 'error');
+      return;
+    }
+    
+    const blocklistText = document.getElementById('blocklist-sites').value.trim();
+    const blocklist = blocklistText
+      .split('\n')
+      .map(site => site.trim().toLowerCase())
+      .filter(site => site.length > 0);
+    
+    await chrome.storage.sync.set({ permanentBlocklist: blocklist });
+    
+    // Show success message
+    const statusDiv = document.getElementById('blocklist-status');
+    statusDiv.textContent = `✓ Blocklist saved (${blocklist.length} site${blocklist.length !== 1 ? 's' : ''})`;
+    statusDiv.style.background = '#d4edda';
+    statusDiv.style.color = '#155724';
+    statusDiv.style.borderLeft = '4px solid #28a745';
+    statusDiv.classList.remove('hidden');
+    
+    setTimeout(() => {
+      statusDiv.classList.add('hidden');
+    }, 3000);
+    
+  } catch (error) {
+    console.error('Error saving blocklist:', error);
+    showMessage('Failed to save blocklist', 'error');
+  }
 }
 
 // Load statistics from storage
