@@ -3,6 +3,7 @@
 let focusSession = null;
 let focusTimer = null;
 let blockedSites = new Set();
+let permanentBlocklist = [];
 let scheduleData = null;
 let analyticsData = null;
 let isPaused = false;
@@ -16,15 +17,36 @@ let sessionReports = [];
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Student Focus Helper 2.0 installed');
   loadStoredData();
+  loadPermanentBlocklist();
   setupAlarms();
   setupContextMenus();
   initializeAnalytics();
 });
 
+// Load permanent blocklist from storage
+async function loadPermanentBlocklist() {
+  try {
+    const result = await chrome.storage.sync.get(['permanentBlocklist']);
+    permanentBlocklist = result.permanentBlocklist || [];
+    console.log('Permanent blocklist loaded:', permanentBlocklist);
+  } catch (error) {
+    console.error('Error loading permanent blocklist:', error);
+    permanentBlocklist = [];
+  }
+}
+
+// Listen for blocklist changes
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'sync' && changes.permanentBlocklist) {
+    permanentBlocklist = changes.permanentBlocklist.newValue || [];
+    console.log('Permanent blocklist updated:', permanentBlocklist);
+  }
+});
+
 // Load stored data from chrome.storage
 async function loadStoredData() {
   try {
-    const result = await chrome.storage.sync.get(['focusSession', 'blockedSites', 'statistics', 'schedule', 'settings', 'sessionReports']);
+    const result = await chrome.storage.sync.get(['focusSession', 'blockedSites', 'statistics', 'schedule', 'settings', 'sessionReports', 'permanentBlocklist']);
     
     if (result.focusSession) {
       focusSession = result.focusSession;
@@ -36,6 +58,10 @@ async function loadStoredData() {
     
     if (result.blockedSites) {
       blockedSites = new Set(result.blockedSites);
+    }
+    
+    if (result.permanentBlocklist) {
+      permanentBlocklist = result.permanentBlocklist;
     }
     
     analyticsData = result.statistics || {
@@ -207,6 +233,19 @@ setInterval(() => {
 
 // Enhanced site blocking with AI-powered detection
 function checkAndBlockSite(tabId, url) {
+  // Check permanent blocklist first (works even without active session)
+  try {
+    const hostname = new URL(url).hostname;
+    const lowerHostname = hostname.toLowerCase();
+    
+    if (permanentBlocklist.some(blocked => lowerHostname.includes(blocked))) {
+      blockSite(tabId, hostname);
+      return;
+    }
+  } catch (error) {
+    console.error('Error checking permanent blocklist:', error);
+  }
+  
   if (!focusSession || !focusSession.isActive || isPaused) {
     return;
   }
@@ -934,6 +973,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         break;
       case 'getFocusSession':
         sendResponse(focusSession);
+        return true;
+      case 'getBlocklist':
+        sendResponse({ permanentBlocklist: permanentBlocklist });
         return true;
       case 'temporarilyUnblock':
         temporarilyUnblockSite(message.site);
