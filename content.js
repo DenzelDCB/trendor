@@ -46,6 +46,23 @@
     currentTask: null,
   };
 
+  // AI Brain
+  let aiConfig = { enabled: false, provider: "builtin", apiUrl: "", apiKey: "", model: "" };
+  let aiBusy = false;
+
+  function aiLoadConfig() {
+    try {
+      chrome.storage.local.get("deskbuddy_ai", (res) => {
+        if (res && res.deskbuddy_ai) aiConfig = Object.assign({ enabled: false, provider: "builtin" }, res.deskbuddy_ai);
+        syncAiPanelInputs();
+      });
+    } catch (e) {}
+  }
+
+  function aiSaveConfig() {
+    try { chrome.storage.local.set({ deskbuddy_ai: aiConfig }); } catch (e) {}
+  }
+
   // Weather system
   let currentWeather = "sunny";
   const WEATHER_TYPES = ["sunny", "rainy", "snowy", "cloudy"];
@@ -3070,6 +3087,18 @@
       state.actionTimer = setTimeout(tick, base * SPEED_MULT[state.speed]);
       return;
     }
+    // AI brain decides what to do when connected
+    if (aiConfig.enabled && !aiBusy && Math.random() < 0.6) {
+      aiBusy = true;
+      aiDecideAndDo()
+        .catch(() => {})
+        .finally(() => {
+          aiBusy = false;
+          const base = 2000 + Math.random() * 5000;
+          state.actionTimer = setTimeout(tick, base * SPEED_MULT[state.speed]);
+        });
+      return;
+    }
     const roll = Math.random();
     if (Math.random() < 0.15) maybeShiftMood();
     if (roll < 0.14) {
@@ -3854,6 +3883,18 @@
     const m = gangMembers[color];
     if (!m || !m.alive) return;
 
+    // AI brain decides what to do when connected
+    if (aiConfig.enabled && !aiBusy && Math.random() < 0.6) {
+      aiBusy = true;
+      aiGangDecideAndDo(color)
+        .catch(() => {})
+        .finally(() => {
+          aiBusy = false;
+          scheduleGangTick(color, 2000 + Math.random() * 2500);
+        });
+      return;
+    }
+
     const roll = Math.random();
     if (roll < 0.12) {
       gangWalkTo(m);
@@ -3898,6 +3939,388 @@
     if (!m || !m.alive) return;
     clearTimeout(m.actionTimer);
     m.actionTimer = setTimeout(() => gangTick(color), ms != null ? ms : 2000 + Math.random() * 3000);
+  }
+
+  // =====================================================================
+  // AI Brain — connect a model so stickmen actually think
+  // =====================================================================
+
+  function aiAskBrain(prompt) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("AI request timed out"));
+      }, 20000);
+      chrome.runtime.sendMessage(
+        {
+          type: "AI_ASK",
+          provider: aiConfig.provider || "custom",
+          config: aiConfig,
+          system: "You are the AI brain of a virtual desk pet stickman. Pick the single most appropriate action for the situation. Reply with exactly one action keyword, nothing else.",
+          prompt,
+        },
+        (res) => {
+          clearTimeout(timer);
+          if (settled) return;
+          settled = true;
+          if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+          if (res && res.ok) return resolve(String(res.text || "").trim());
+          reject(new Error(res && res.error ? res.error : "AI request failed"));
+        }
+      );
+    });
+  }
+
+  function aiCheckBuiltin() {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: "AI_BUILTIN_AVAIL" }, (res) => {
+          if (chrome.runtime.lastError || !res || !res.ok) return resolve(null);
+          resolve(res.result || null);
+        });
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  const AI_ACTION_MAP = {
+    walk: () => walkTo(),
+    sit: () => sitDown(),
+    stretch: () => stretch(),
+    look: () => lookAround(),
+    write: () => writeSomething(),
+    dance: () => dance(),
+    wave: () => wave(),
+    meditate: () => meditate(),
+    celebrate: () => celebrate(),
+    selfie: () => takeSelfie(),
+    doodle: () => doodleElements(),
+    spray: () => sprayTag(),
+    sparkle: () => sparkle(),
+    climb: () => climbElement(),
+    inspect: () => inspectElement(),
+    scroll: () => scrollPage(),
+    eat: () => eatElement(),
+    click: () => clickButton(),
+    type: () => typeInBox(),
+    toggle: () => toggleCheckbox(),
+    smash: () => doSmash(),
+    pet: () => spawnPet(),
+    cook: () => cook(),
+    sleep: () => sleep(),
+    talk: () => say("idle"),
+  };
+  const AI_ACTIONS_PROMPT = [
+    "walk: go for a wander",
+    "sit: sit down and relax",
+    "stretch: stretch the arms",
+    "look: look around the page",
+    "write: doodle a little code snippet",
+    "dance: dance for fun",
+    "wave: wave hello",
+    "meditate: calm meditation",
+    "celebrate: celebrate happily",
+    "selfie: take a selfie",
+    "doodle: doodle on page elements",
+    "spray: spray some graffiti",
+    "sparkle: sprinkle sparkles",
+    "climb: climb a page element",
+    "inspect: inspect page elements",
+    "scroll: scroll the page",
+    "eat: munch on something",
+    "click: click a button on the page",
+    "type: type in an input box",
+    "toggle: toggle a checkbox",
+    "smash: smash page elements",
+    "pet: summon a pet friend",
+    "cook: cook some food",
+    "sleep: take a nap",
+    "talk: say a little phrase",
+  ].join("\n");
+
+  const GANG_AI_ACTION_MAP = {
+    walk: (c) => gangWalkTo(gangMembers[c]),
+    sit: (c) => gangSit(gangMembers[c], c),
+    stretch: (c) => gangStretch(gangMembers[c], c),
+    look: (c) => gangLook(gangMembers[c], c),
+    dance: (c) => gangDance(gangMembers[c], c),
+    wave: (c) => gangWave(gangMembers[c], c),
+    celebrate: (c) => gangCelebrate(gangMembers[c], c),
+    selfie: (c) => gangSelfie(gangMembers[c], c),
+    meditate: (c) => gangMeditate(gangMembers[c], c),
+    doodle: (c) => gangDoodle(gangMembers[c], c),
+    sparkle: (c) => gangSparkle(gangMembers[c], c),
+    climb: (c) => gangClimb(gangMembers[c], c),
+    cook: (c) => gangCook(gangMembers[c], c),
+    eat: (c) => gangEat(gangMembers[c], c),
+    click: (c) => gangClick(gangMembers[c], c),
+    type: (c) => gangType(gangMembers[c], c),
+    toggle: (c) => gangToggle(gangMembers[c], c),
+    inspect: (c) => gangInspect(gangMembers[c], c),
+    scroll: (c) => gangScroll(gangMembers[c], c),
+    toolbox: (c) => gangToolbox(gangMembers[c], c),
+    water: (c) => gangWater(gangMembers[c], c),
+    attack: (c) => gangAttack(gangMembers[c], c),
+  };
+  const GANG_AI_ACTIONS_PROMPT = [
+    "walk: go for a wander",
+    "sit: sit down",
+    "stretch: stretch",
+    "look: look around",
+    "dance: dance for fun",
+    "wave: wave hello",
+    "celebrate: celebrate",
+    "selfie: take a selfie",
+    "meditate: calm meditation",
+    "doodle: doodle",
+    "sparkle: sprinkle sparkles",
+    "climb: climb around",
+    "cook: cook some food",
+    "eat: munch on something",
+    "click: click a page element",
+    "type: type in an input",
+    "toggle: toggle a checkbox",
+    "inspect: inspect page elements",
+    "scroll: scroll the page",
+    "toolbox: fix things with tools",
+    "water: water the plants",
+    "attack: attack another stickman",
+  ].join("\n");
+
+  function aiContextFor(actor, gang) {
+    const n = actor.needs || {};
+    const name = gang ? actor.name : "Yellow";
+    return `Situation for ${name}:
+- Time of day: ${getTimeOfDay()}
+- Weather: ${currentWeather}
+- Mood: ${gang ? (actor.pose || "idle") : state.mood}
+- Needs: hunger ${Math.round(n.hunger || 50)}%, energy ${Math.round(n.energy || 50)}%, happiness ${Math.round(n.happiness || 50)}%, social ${Math.round(n.social || 50)}%
+- Current page title: "${document.title}"
+
+Available actions:
+${gang ? GANG_AI_ACTIONS_PROMPT : AI_ACTIONS_PROMPT}
+
+Choose the single best action for ${name} right now. Reply with exactly one keyword.`;
+  }
+
+  function aiKeywordFrom(text) {
+    const first = (text || "").trim().toLowerCase().split(/\s+/)[0] || "";
+    return first.replace(/[^a-z]/g, "");
+  }
+
+  async function aiDecideAndDo() {
+    if (!aiConfig.enabled) return;
+    try {
+      const text = await aiAskBrain(aiContextFor(state, false));
+      if (!state.active) return;
+      const kw = aiKeywordFrom(text);
+      const fn = AI_ACTION_MAP[kw];
+      if (fn) {
+        showBubble("🧠 " + kw + "!", 1600);
+        fn();
+        return;
+      }
+      say("idle");
+      showBubble("🧠 hmm, " + (text || "?"), 2000);
+    } catch (err) {
+      say("idle");
+    }
+  }
+
+  async function aiGangDecideAndDo(color) {
+    const m = gangMembers[color];
+    if (!m || !m.alive) return;
+    try {
+      const text = await aiAskBrain(aiContextFor(m, true));
+      const kw = aiKeywordFrom(text);
+      const fn = GANG_AI_ACTION_MAP[kw];
+      if (fn) {
+        fn(color);
+      } else {
+        gangSay(m, "idle");
+      }
+    } catch (err) {
+      const mm = gangMembers[color];
+      if (mm && mm.alive) gangSay(mm, "idle");
+    }
+  }
+
+  async function aiTestConnection() {
+    const text = await aiAskBrain("Reply with exactly one word: ok");
+    return text;
+  }
+
+  function aiPanelStatus(msg) {
+    const st = document.getElementById("deskbuddy-ai-status");
+    if (st) st.textContent = msg;
+  }
+
+  function syncAiPanelInputs() {
+    const url = document.getElementById("deskbuddy-ai-url");
+    const key = document.getElementById("deskbuddy-ai-key");
+    const model = document.getElementById("deskbuddy-ai-model");
+    const tog = document.getElementById("deskbuddy-ai-toggle");
+    const sel = document.getElementById("deskbuddy-ai-provider");
+    if (sel) sel.value = aiConfig.provider || "builtin";
+    if (url) url.value = aiConfig.apiUrl || "";
+    if (key) key.value = aiConfig.apiKey || "";
+    if (model) model.value = aiConfig.model || "";
+    if (tog) {
+      tog.textContent = aiConfig.enabled ? "on" : "off";
+      tog.classList.toggle("on", !!aiConfig.enabled);
+    }
+    const isCustom = (aiConfig.provider || "builtin") === "custom";
+    if (url) url.style.display = isCustom ? "" : "none";
+    if (key) key.style.display = isCustom ? "" : "none";
+    if (model) model.style.display = isCustom ? "" : "none";
+    const biEl = document.getElementById("deskbuddy-ai-builtin");
+    if (biEl) biEl.style.display = (aiConfig.provider || "builtin") === "builtin" ? "" : "none";
+    if (aiConfig.provider === "builtin") aiRefreshBuiltinStatus();
+  }
+
+  function aiRefreshBuiltinStatus() {
+    const el = document.getElementById("deskbuddy-ai-builtin");
+    if (!el) return;
+    el.textContent = "checking built-in AI…";
+    aiCheckBuiltin().then((r) => {
+      if (!el.isConnected) return;
+      if (!r) { el.textContent = "built-in AI unavailable here"; return; }
+      if (!r.ok) { el.textContent = "built-in AI: " + (r.error || r.state || "unavailable"); return; }
+      const s = r.state || "available";
+      el.textContent = s === "available"
+        ? "built-in AI: available ✔ free, no key!"
+        : "built-in AI: " + s + " (model downloads on first use)";
+    });
+  }
+
+  function initAiPanel() {
+    const tog = document.getElementById("deskbuddy-ai-toggle");
+    const save = document.getElementById("deskbuddy-ai-save");
+    const test = document.getElementById("deskbuddy-ai-test");
+    const sel = document.getElementById("deskbuddy-ai-provider");
+    if (sel) {
+      sel.addEventListener("change", () => {
+        aiConfig.provider = sel.value;
+        aiSaveConfig();
+        syncAiPanelInputs();
+        aiPanelStatus("provider set to " + sel.value);
+      });
+    }
+    if (tog) {
+      tog.addEventListener("click", () => {
+        aiConfig.enabled = !aiConfig.enabled;
+        aiSaveConfig();
+        syncAiPanelInputs();
+        aiPanelStatus(aiConfig.enabled ? "AI brain is ON. Stickmen use the model now." : "AI brain is off. Random behavior.");
+      });
+    }
+    if (save) {
+      save.addEventListener("click", () => {
+        const p = (document.getElementById("deskbuddy-ai-provider").value || "builtin");
+        aiConfig.provider = p;
+        aiConfig.apiUrl = (document.getElementById("deskbuddy-ai-url").value || "").trim();
+        aiConfig.apiKey = (document.getElementById("deskbuddy-ai-key").value || "").trim();
+        aiConfig.model = (document.getElementById("deskbuddy-ai-model").value || "").trim();
+        aiSaveConfig();
+        aiPanelStatus("config saved ✔");
+      });
+    }
+    if (test) {
+      test.addEventListener("click", () => {
+        const p = (document.getElementById("deskbuddy-ai-provider").value || "builtin");
+        aiConfig.provider = p;
+        aiConfig.apiUrl = (document.getElementById("deskbuddy-ai-url").value || "").trim();
+        aiConfig.apiKey = (document.getElementById("deskbuddy-ai-key").value || "").trim();
+        aiConfig.model = (document.getElementById("deskbuddy-ai-model").value || "").trim();
+        aiSaveConfig();
+        aiPanelStatus("testing " + p + "…");
+        aiTestConnection()
+          .then((t) => { aiPanelStatus("connected ✔ model said: " + t); })
+          .catch((err) => { aiPanelStatus("failed ✖ " + String(err).slice(0, 60)); });
+      });
+    }
+    syncAiPanelInputs();
+  }
+
+  // =====================================================================
+  // Portal — white portal that sucks stickmen in when banned
+  // =====================================================================
+
+  function spawnPortal(x, y) {
+    const portal = document.createElement("div");
+    portal.className = "deskbuddy-portal";
+    portal.style.left = x + "px";
+    portal.style.top = y + "px";
+    portal.innerHTML =
+      '<div class="deskbuddy-portal-flare"></div><div class="deskbuddy-portal-ring"></div><div class="deskbuddy-portal-hole"></div>';
+    document.documentElement.appendChild(portal);
+    requestAnimationFrame(() => requestAnimationFrame(() => portal.classList.add("on")));
+    return portal;
+  }
+
+  function vanishPortal(portal) {
+    if (!portal || !portal.isConnected) return;
+    portal.classList.remove("on");
+    portal.classList.add("vanish");
+    setTimeout(() => { if (portal.isConnected) portal.remove(); }, 400);
+  }
+
+  function suckIntoPortal(el, portal, done) {
+    if (!el || !el.isConnected) { vanishPortal(portal); if (done) done(); return; }
+    const er = el.getBoundingClientRect();
+    const pr = portal.getBoundingClientRect();
+    const clone = el.cloneNode(true);
+    clone.style.position = "fixed";
+    clone.style.left = er.left + "px";
+    clone.style.top = er.top + "px";
+    clone.style.margin = "0";
+    clone.style.width = er.width + "px";
+    clone.style.height = er.height + "px";
+    clone.style.zIndex = "2147483011";
+    clone.style.pointerEvents = "none";
+    clone.style.transition = "left 0.8s cubic-bezier(0.5, 0, 0.8, 1), top 0.8s cubic-bezier(0.5, 0, 0.8, 1), transform 0.8s ease-in, opacity 0.8s ease-in";
+    clone.classList.add("deskbuddy-sucked");
+    document.documentElement.appendChild(clone);
+    const dx = (pr.left - 16) - er.left;
+    const dy = (pr.top - 36) - er.top;
+    void clone.offsetWidth;
+    clone.style.left = (er.left + dx) + "px";
+    clone.style.top = (er.top + dy) + "px";
+    clone.style.transform = "scale(0.05) rotate(360deg)";
+    clone.style.opacity = "0";
+    setTimeout(() => {
+      if (clone.isConnected) clone.remove();
+      vanishPortal(portal);
+      if (done) done();
+    }, 900);
+  }
+
+  function portalBanStickman(sm) {
+    let el = null;
+    if (sm.id === "yellow" && state.active && wrap) {
+      el = wrap;
+    } else if (gangMembers[sm.id]) {
+      el = gangMembers[sm.id].wrap;
+    }
+    if (el && el.isConnected) {
+      const rect = el.getBoundingClientRect();
+      const px = Math.min(window.innerWidth - 60, Math.max(60, rect.right + 100));
+      const py = Math.max(60, Math.min(window.innerHeight - 60, rect.top + 30));
+      const portal = spawnPortal(px, py);
+      suckIntoPortal(el, portal, () => {
+        if (sm.id === "yellow") {
+          if (state.active) deactivate();
+        } else {
+          removeGangMember(sm.id);
+        }
+        chrome.runtime.sendMessage({ type: "BAN_STICKMAN", color: sm.id }).catch(() => {});
+        setTimeout(() => updatePanel(), 700);
+      });
+    } else {
+      chrome.runtime.sendMessage({ type: "BAN_STICKMAN", color: sm.id }).catch(() => {});
+      setTimeout(() => updatePanel(), 400);
+    }
   }
 
   // =====================================================================
@@ -3948,10 +4371,38 @@
       }
     });
     panelEl.appendChild(drawBtn);
+
+    // AI Brain section
+    const aiBox = document.createElement("div");
+    aiBox.className = "deskbuddy-panel-ai";
+    aiBox.innerHTML = `
+      <div class="deskbuddy-panel-ai-head">
+        <span>🧠 AI Brain</span>
+        <button class="deskbuddy-ai-toggle" id="deskbuddy-ai-toggle">off</button>
+      </div>
+      <select id="deskbuddy-ai-provider">
+        <option value="builtin">Built-in AI (free)</option>
+        <option value="pollinations">Pollinations (free)</option>
+        <option value="custom">Custom API</option>
+      </select>
+      <div class="deskbuddy-ai-builtin" id="deskbuddy-ai-builtin"></div>
+      <input id="deskbuddy-ai-url" type="text" placeholder="API URL (e.g. https://api.openai.com/v1)" />
+      <input id="deskbuddy-ai-key" type="password" placeholder="API key" />
+      <input id="deskbuddy-ai-model" type="text" placeholder="Model (e.g. gpt-4o-mini)" />
+      <div class="deskbuddy-ai-actions">
+        <button id="deskbuddy-ai-save">save</button>
+        <button id="deskbuddy-ai-test">test</button>
+      </div>
+      <div class="deskbuddy-ai-status" id="deskbuddy-ai-status">AI is off. Try Built-in AI or Pollinations — both free!</div>
+    `;
+    panelEl.appendChild(aiBox);
+    initAiPanel();
+
     panelToggle.addEventListener("click", (e) => {
       e.stopPropagation();
       panelEl.classList.toggle("open");
       updatePanel();
+      syncAiPanelInputs();
     });
     document.addEventListener("click", (e) => {
       if (panelEl && !panelEl.contains(e.target) && e.target !== panelToggle) {
@@ -4035,12 +4486,11 @@
         status.textContent = sm.onThisTab ? "✓ here" : ("tab " + (sm.currentTab || "?"));
         btn.textContent = sm.onThisTab ? "🚫" : "bring";
         if (sm.onThisTab) {
-          btn.title = "Ban from this tab";
+          btn.title = "Ban from this tab (portal)";
           btn.addEventListener("click", () => {
-            chrome.runtime.sendMessage({ type: "BAN_STICKMAN", color: sm.id }).catch(() => {});
-            btn.textContent = "...";
+            btn.textContent = "🌀";
             btn.disabled = true;
-            setTimeout(() => updatePanel(), 500);
+            portalBanStickman(sm);
           });
         } else {
           btn.addEventListener("click", () => {
@@ -4712,6 +5162,11 @@
     "achievements          — view achievements",
     "tasks [name]          — view tasks for stickman (defaults to yellow)",
     "cleartasks [name]     — clear all tasks for stickman (defaults to yellow)",
+    "ai                    — show AI brain status",
+    "ai on / ai off        — turn the AI brain on or off",
+    "ai provider <name>    — builtin (free) | pollinations (free) | custom",
+    "ai config <url> <key> <model> — connect a custom OpenAI-compatible model",
+    "ai test               — test the AI connection",
   ];
 
   function toggleConsole() {
@@ -4958,6 +5413,49 @@
       case "cleartasks":
         clearTasks(arg);
         break;
+      case "ai":
+        if (rest.length === 0) {
+          logLine(aiConfig.enabled ? "AI brain: ON 🧠" : "AI brain: OFF");
+          logLine("provider: " + (aiConfig.provider || "builtin") + " (free options: builtin, pollinations)");
+          if ((aiConfig.provider || "builtin") === "custom") {
+            logLine(aiConfig.apiUrl ? "API: " + aiConfig.apiUrl + " | model: " + (aiConfig.model || "?") : "No API configured. Try: ai config <url> <key> <model>");
+          } else {
+            logLine("free provider — no API key needed!");
+          }
+        } else if (rest[0] === "on" || rest[0] === "off") {
+          aiConfig.enabled = rest[0] === "on";
+          aiSaveConfig();
+          syncAiPanelInputs();
+          logLine("AI brain turned " + (aiConfig.enabled ? "on 🧠" : "off"));
+        } else if (rest[0] === "provider") {
+          if (["builtin", "pollinations", "custom"].includes(rest[1])) {
+            aiConfig.provider = rest[1];
+            aiSaveConfig();
+            syncAiPanelInputs();
+            logLine("AI provider set to " + rest[1] + (rest[1] !== "custom" ? " (free)" : ""));
+          } else {
+            logLine("provider must be one of: builtin | pollinations | custom");
+          }
+        } else if (rest[0] === "config") {
+          const parts = arg.split(/\s+/);
+          if (parts.length >= 2) {
+            aiConfig.apiUrl = parts[1] || "";
+            aiConfig.apiKey = parts[2] || "";
+            aiConfig.model = parts[3] || "";
+            aiSaveConfig();
+            syncAiPanelInputs();
+            logLine("AI config saved.");
+          } else {
+            logLine("usage: ai config <api-url> <api-key> <model>");
+          }
+        } else if (rest[0] === "test") {
+          aiTestConnection()
+            .then((t) => logLine("AI connected ✔ said: " + t))
+            .catch((err) => logLine("AI failed ✖ " + err));
+        } else {
+          logLine("unknown ai subcommand. try: ai on / ai off / ai provider / ai config / ai test");
+        }
+        break;
       default:
         logLine("unknown command. type \"help\".");
     }
@@ -5012,6 +5510,7 @@
   });
 
   // Always show the control panel on every tab
+  aiLoadConfig();
   setupPanel();
   updatePanel();
 })();
