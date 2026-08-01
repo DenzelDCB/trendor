@@ -1273,6 +1273,7 @@
   // ---------------------------------------------------------------------
   let rampageTimer = null;
   let lastSmash = 0, lastEat = 0, lastClick = 0, lastType = 0, lastToggle = 0, lastInspect = 0, lastTomato = 0;
+  let lastAnswer = 0, lastAnswerTime = 0, lastAnswerKey = "";
 
   function pickPageElement(exclude = []) {
     const all = document.querySelectorAll(
@@ -1507,6 +1508,131 @@
       setPose("idle");
       showBubble("*types* 📝", 1200);
     }, 1400 + Math.random() * 500);
+  }
+
+  // ---------------------------------------------------------------------
+  // Answer — buddy finds a question + answer box on the page and fills it
+  // ---------------------------------------------------------------------
+
+  const ANSWER_INPUT_SELECTOR =
+    'input[type="text"], input[type="search"], input[type="url"], input[type="email"], ' +
+    'input[type="tel"], input[type="number"], textarea, [contenteditable="true"]';
+
+  function findQuestionInput() {
+    const inputs = document.querySelectorAll(ANSWER_INPUT_SELECTOR);
+    for (const input of inputs) {
+      if (input.closest("#deskbuddy-root")) continue;
+      if (input.disabled || input.readOnly) continue;
+      if (input.isContentEditable && input.getAttribute("contenteditable") === "false") continue;
+      const alreadyFilled = input.tagName === "INPUT" || input.tagName === "TEXTAREA"
+        ? (input.value || "").trim()
+        : (input.textContent || "").trim();
+      if (alreadyFilled) continue;
+      const rect = input.getBoundingClientRect();
+      if (rect.width < 20 || rect.height < 10) continue;
+      if (rect.top < -50 || rect.top > window.innerHeight + 50) continue;
+      const style = getComputedStyle(input);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      const question = questionFor(input);
+      if (question) return { input, question };
+    }
+    return null;
+  }
+
+  function questionFor(input) {
+    const parts = [];
+    const safe = (s) => { try { return CSS.escape(s); } catch (e) { return String(s).replace(/["\\]/g, ""); } };
+    const lb = input.getAttribute("aria-labelledby");
+    if (lb) lb.split(/\s+/).forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && el.textContent) parts.push(el.textContent);
+    });
+    if (input.getAttribute("aria-label")) parts.push(input.getAttribute("aria-label"));
+    if (input.id) {
+      const lbl = document.querySelector('label[for="' + safe(input.id) + '"]');
+      if (lbl && lbl.textContent) parts.push(lbl.textContent);
+    }
+    if (input.placeholder) parts.push(input.placeholder);
+    const wrap = input.closest("label");
+    if (wrap && wrap.textContent) parts.push(wrap.textContent);
+    let prev = input.previousElementSibling;
+    for (let i = 0; i < 2 && prev; i++) {
+      if (prev.textContent) parts.push(prev.textContent);
+      prev = prev.previousElementSibling;
+    }
+    let anc = input.parentElement;
+    for (let i = 0; i < 3 && anc; i++) {
+      if (anc.textContent) parts.push(anc.textContent);
+      anc = anc.parentElement;
+    }
+    for (const raw of parts) {
+      const clean = String(raw).replace(/\s+/g, " ").trim();
+      if (!clean || clean.length > 280) continue;
+      if (
+        clean.endsWith("?") ||
+        /\b(what|which|who|whose|where|when|why|how|is|are|was|were|do|does|did|will|would|can|could|should)\b/i.test(clean)
+      ) {
+        return clean;
+      }
+    }
+    return null;
+  }
+
+  function setInputValue(input, text) {
+    if (input.isContentEditable) {
+      input.textContent = text;
+      try {
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+      } catch (e) {
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    } else {
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  const ANSWER_AI_SYSTEM = "You are a helpful assistant answering a single question found on a web page. Reply with exactly the answer text.";
+  const ANSWER_AI_PROMPT =
+    'On the current page there is this question with an empty answer box:\n"{q}"\n\n' +
+    "Reply with ONLY the direct answer to type into the box. No explanations, no quotes, no extra text.";
+
+  async function answerQuestion() {
+    const now = Date.now();
+    if (!state.active || state.setupType || state.sleeping) return false;
+    if (now - lastAnswer < 6000) return false;
+    const pair = findQuestionInput();
+    if (!pair) return false;
+    const key = pair.question.slice(0, 80);
+    if (key === lastAnswerKey && now - lastAnswerTime < 60000) return false;
+    lastAnswer = now;
+    lastAnswerTime = now;
+    lastAnswerKey = key;
+    const { input, question } = pair;
+    const rect = input.getBoundingClientRect();
+    walkTo(rect.left - 40);
+    await new Promise((r) => setTimeout(r, 1000 + Math.random() * 500));
+    if (!state.active || !input.isConnected) return false;
+    setPose("writing");
+    showBubble("🧠 thinking...", 1400);
+    let answer = "";
+    try {
+      const text = await aiAskBrain(ANSWER_AI_PROMPT.replace("{q}", question), ANSWER_AI_SYSTEM);
+      answer = String(text || "").replace(/^["'`\s]+|["'`\s]+$/g, "");
+    } catch (e) { answer = ""; }
+    if (!state.active) return false;
+    if (!input.isConnected) { setPose("idle"); return false; }
+    if (!answer) {
+      setPose("idle");
+      showBubble("couldn't figure that one out 🤔", 1600);
+      return false;
+    }
+    input.focus();
+    setInputValue(input, answer);
+    setPose("idle");
+    showBubble("answered it! ✅", 1400);
+    return true;
   }
 
   // ---------------------------------------------------------------------
@@ -3090,7 +3216,7 @@
     // AI brain decides what to do when connected
     if (aiConfig.enabled && !aiBusy && Math.random() < 0.6) {
       aiBusy = true;
-      aiDecideAndDo()
+      (findQuestionInput() ? answerQuestion() : aiDecideAndDo())
         .catch(() => {})
         .finally(() => {
           aiBusy = false;
@@ -3812,6 +3938,43 @@
     }, 1400 + Math.random() * 500);
   }
 
+  async function gangAnswer(m, color) {
+    if (!m.alive) return false;
+    const now = Date.now();
+    if (now - lastAnswer < 6000) return false;
+    const pair = findQuestionInput();
+    if (!pair) return false;
+    const key = pair.question.slice(0, 80);
+    if (key === lastAnswerKey && now - lastAnswerTime < 60000) return false;
+    lastAnswer = now;
+    lastAnswerTime = now;
+    lastAnswerKey = key;
+    const { input, question } = pair;
+    const rect = input.getBoundingClientRect();
+    gangWalkTo(m, rect.left - 40);
+    gangPose(m, "writing");
+    gangBubble(m, "🧠 thinking...", 1200);
+    await new Promise((r) => setTimeout(r, 900 + Math.random() * 500));
+    if (!m.alive) return false;
+    let answer = "";
+    if (input.isConnected) {
+      try {
+        const text = await aiAskBrain(ANSWER_AI_PROMPT.replace("{q}", question), ANSWER_AI_SYSTEM);
+        answer = String(text || "").replace(/^["'`\s]+|["'`\s]+$/g, "");
+      } catch (e) { answer = ""; }
+    }
+    if (!m.alive) return false;
+    if (input.isConnected && answer) {
+      input.focus();
+      setInputValue(input, answer);
+      gangBubble(m, "answered it! ✅", 1200);
+    } else if (input.isConnected) {
+      gangBubble(m, "hmm, no idea 🤔", 1200);
+    }
+    gangPose(m, "idle");
+    return true;
+  }
+
   function gangToggle(m, color) {
     if (!m.alive) return;
     const now = Date.now();
@@ -3886,7 +4049,8 @@
     // AI brain decides what to do when connected
     if (aiConfig.enabled && !aiBusy && Math.random() < 0.6) {
       aiBusy = true;
-      aiGangDecideAndDo(color)
+      const pair = findQuestionInput();
+      (pair ? gangAnswer(gangMembers[color], color) : aiGangDecideAndDo(color))
         .catch(() => {})
         .finally(() => {
           aiBusy = false;
@@ -3945,7 +4109,7 @@
   // AI Brain — connect a model so stickmen actually think
   // =====================================================================
 
-  function aiAskBrain(prompt) {
+  function aiAskBrain(prompt, system) {
     return new Promise((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
@@ -3958,7 +4122,7 @@
           type: "AI_ASK",
           provider: aiConfig.provider || "custom",
           config: aiConfig,
-          system: "You are the AI brain of a virtual desk pet stickman. Pick the single most appropriate action for the situation. Reply with exactly one action keyword, nothing else.",
+          system: system || "You are the AI brain of a virtual desk pet stickman. Pick the single most appropriate action for the situation. Reply with exactly one action keyword, nothing else.",
           prompt,
         },
         (res) => {
@@ -4004,6 +4168,7 @@
     eat: () => eatElement(),
     click: () => clickButton(),
     type: () => typeInBox(),
+    answer: () => answerQuestion(),
     toggle: () => toggleCheckbox(),
     smash: () => doSmash(),
     pet: () => spawnPet(),
@@ -4031,6 +4196,7 @@
     "eat: munch on something",
     "click: click a button on the page",
     "type: type in an input box",
+    "answer: fill in the answer to a question on the page",
     "toggle: toggle a checkbox",
     "smash: smash page elements",
     "pet: summon a pet friend",
@@ -4056,6 +4222,7 @@
     eat: (c) => gangEat(gangMembers[c], c),
     click: (c) => gangClick(gangMembers[c], c),
     type: (c) => gangType(gangMembers[c], c),
+    answer: (c) => gangAnswer(gangMembers[c], c),
     toggle: (c) => gangToggle(gangMembers[c], c),
     inspect: (c) => gangInspect(gangMembers[c], c),
     scroll: (c) => gangScroll(gangMembers[c], c),
@@ -4080,6 +4247,7 @@
     "eat: munch on something",
     "click: click a page element",
     "type: type in an input",
+    "answer: fill in the answer to a question on the page",
     "toggle: toggle a checkbox",
     "inspect: inspect page elements",
     "scroll: scroll the page",
@@ -4091,12 +4259,19 @@
   function aiContextFor(actor, gang) {
     const n = actor.needs || {};
     const name = gang ? actor.name : "Yellow";
+    const pair = findQuestionInput();
+    let pageHint = `- Current page title: "${document.title}"`;
+    if (pair) {
+      pageHint += `\n- There is an unanswered question with an empty answer box on this page: "${pair.question}" (prefer the action: answer)`;
+    } else {
+      pageHint += "\n- No question/answer box found on this page.";
+    }
     return `Situation for ${name}:
 - Time of day: ${getTimeOfDay()}
 - Weather: ${currentWeather}
 - Mood: ${gang ? (actor.pose || "idle") : state.mood}
 - Needs: hunger ${Math.round(n.hunger || 50)}%, energy ${Math.round(n.energy || 50)}%, happiness ${Math.round(n.happiness || 50)}%, social ${Math.round(n.social || 50)}%
-- Current page title: "${document.title}"
+${pageHint}
 
 Available actions:
 ${gang ? GANG_AI_ACTIONS_PROMPT : AI_ACTIONS_PROMPT}
