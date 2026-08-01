@@ -46,6 +46,119 @@ async function sendSafe(tabId, message) {
   } catch (e) {}
 }
 
+// Ask an OpenAI-compatible chat-completions API and return the assistant text.
+async function aiAsk(cfg, systemPrompt, userPrompt) {
+  const base = (cfg.apiUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
+  const res = await fetch(base + "/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + (cfg.apiKey || ""),
+    },
+    body: JSON.stringify({
+      model: cfg.model || "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt || "You are a helpful assistant." },
+        { role: "user", content: userPrompt },
+      ],
+      max_tokens: 150,
+      temperature: 1.0,
+    }),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.text()).slice(0, 200); } catch (e) {}
+    throw new Error("AI HTTP " + res.status + (detail ? ": " + detail : ""));
+  }
+  const data = await res.json();
+  const text =
+    data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  if (!text) throw new Error("AI returned no text");
+  return text;
+}
+
+// Pollinations.ai — free, no API key needed (anonymous ~1 req/15s).
+async function aiAskPollinations(systemPrompt, userPrompt) {
+  const res = await fetch("https://text.pollinations.ai/openai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "openai",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 150,
+      stream: false,
+    }),
+  });
+  if (!res.ok) throw new Error("Pollinations HTTP " + res.status);
+  const data = await res.json();
+  const text =
+    data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  if (!text) throw new Error("Pollinations returned no text");
+  return text;
+}
+
+// Chrome built-in AI (Gemini Nano / Prompt API) — free, on-device, no key.
+// Runs in the page's MAIN world via chrome.scripting because the Prompt API
+// is not available in isolated content-script worlds or service workers.
+async function aiAskBuiltin(tab, systemPrompt, userPrompt) {
+  if (!tab || !tab.id) throw new Error("No tab to run built-in AI in");
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    world: "MAIN",
+    func: (system, prompt) => {
+      return (async () => {
+        const LM =
+          (typeof self !== "undefined" && self.LanguageModel) ||
+          (typeof window !== "undefined" && window.LanguageModel);
+        if (!LM) return { ok: false, error: "Chrome built-in AI not found (need Chrome 138+, on-device model enabled)" };
+        if (typeof LM.availability === "function") {
+          const a = await LM.availability();
+          if (a === "unavailable") return { ok: false, error: "Built-in AI unavailable on this device (needs 4GB+ VRAM or 16GB+ RAM)" };
+          if (a === "unsupported") return { ok: false, error: "Built-in AI not supported in this Chrome" };
+        }
+        const session = await LM.create({ systemPrompt: system });
+        const text = await session.prompt(prompt);
+        return { ok: true, text: String(text) };
+      })();
+    },
+    args: [systemPrompt, userPrompt],
+  });
+  const result = results && results[0] && results[0].result;
+  if (!result) throw new Error("Built-in AI returned nothing");
+  if (!result.ok) throw new Error(result.error || "Built-in AI failed");
+  return result.text;
+}
+
+async function aiBuiltinAvailability(tab) {
+  if (!tab || !tab.id) return { ok: false, state: "unsupported" };
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    world: "MAIN",
+    func: () => {
+      return (async () => {
+        const LM =
+          (typeof self !== "undefined" && self.LanguageModel) ||
+          (typeof window !== "undefined" && window.LanguageModel);
+        if (!LM) return { ok: false, state: "unsupported" };
+        try {
+          if (typeof LM.availability === "function") {
+            const a = await LM.availability();
+            return { ok: true, state: a };
+          }
+          return { ok: true, state: "available" };
+        } catch (e) {
+          return { ok: false, state: "error", error: String(e) };
+        }
+      })();
+    },
+  });
+  return results && results[0] && results[0].result;
+}
+
 const bans = {};
 
 function getBans() {
@@ -305,6 +418,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "WHO_AM_I") {
     const onThisTab = getAlive().filter((s) => s.currentTab === tabId).map((s) => s.id);
     sendResponse({ isActive: onThisTab.includes("yellow"), stickmen: onThisTab });
+    return true;
+  }
+
+  if (msg.type === "AI_ASK") {
+    const p = msg.provider || "custom";
+    const job =
+      p === "builtin" ? aiAskBuiltin(sender.tab, msg.system, msg.prompt)
+      : p === "pollinations" ? aiAskPollinations(msg.system, msg.prompt)
+      : aiAsk(msg.config, msg.system, msg.prompt);
+    job
+      .then((text) => sendResponse({ ok: true, text }))
+      .catch((err) => sendResponse({ ok: false, error: String(err && err.message ? err.message : err) }));
+    return true;
+  }
+
+  if (msg.type === "AI_BUILTIN_AVAIL") {
+    aiBuiltinAvailability(sender.tab)
+      .then((r) => sendResponse({ ok: true, result: r || { ok: false, state: "unsupported" } }))
+      .catch((err) => sendResponse({ ok: false, error: String(err && err.message ? err.message : err) }));
     return true;
   }
 });
